@@ -1,145 +1,149 @@
-# Cortex (Obsidian plugin)
+# Cortex
 
-The native Obsidian version of [Cortex](https://github.com/AndyMDH/cortex): turns
-dictated or pasted notes into a linked, tagged knowledge graph, right inside
-Obsidian. Everything lives in one settings panel - no terminal required to
-use it day to day.
+Turn things you dictate or paste into Obsidian — meeting notes, ideas, stray
+thoughts — into a linked, tagged knowledge graph, automatically. Capture a
+note, and Cortex tags it, summarizes it, and links it to related notes for
+you. Once a topic has enough notes behind it, Cortex writes a summary page
+for that topic too, so your vault turns into something you can actually
+browse later instead of a pile of unread captures.
 
-Same folder layout and note schema as the original bash-based Cortex
-(`00-Inbox` → `10-Meetings` → `20-Wikis`, `30-Tags` as a tag registry), so an
-existing Cortex vault can adopt this plugin without migrating any data.
+Everything happens inside Obsidian. No separate app to run, no terminal
+required day to day.
 
-## Two execution modes
+## What you need before installing
 
-Pick whichever matches how you pay for Claude - switch any time in Settings → Cortex.
+- **Obsidian** (free, [obsidian.md](https://obsidian.md))
+- Either of these — pick whichever applies to you:
+  - **A Claude subscription** (Claude Pro or Max) — recommended if you
+    already pay for Claude. You'll also need
+    [Claude Code](https://docs.claude.com/claude-code) installed, which is
+    Anthropic's free command-line tool. It sounds technical but installing
+    it is just following the instructions on that page — you won't need to
+    use a terminal for anything beyond that one-time install.
+  - **An Anthropic API key** — if you don't have a Claude subscription, you
+    can pay for usage separately instead. Get a key at
+    [console.anthropic.com](https://console.anthropic.com/settings/keys).
 
-- **Claude Code CLI (default)** - shells out to `claude -p`, using whatever
-  auth Claude Code already has, subscription or API key. No separate billing.
-  The plugin writes the same `SKILL.md` prompts the bash version uses into
-  your vault's `.claude/skills/` folder and lets Claude Code's own agentic
-  Read/Write/Bash loop do the work - same robustness as the original, just
-  triggered from inside Obsidian instead of a terminal or `launchd`. Desktop
-  only, and requires [Claude Code](https://docs.claude.com/claude-code)
-  installed and authenticated.
-- **Direct API key** - the plugin calls the Anthropic API itself, no CLI
-  involved. Works on mobile too, and reacts within seconds of a capture
-  instead of needing a full inbox scan. Requires a separate
-  [Anthropic API key](https://console.anthropic.com/settings/keys), billed
-  per token - **not** the same thing as a Claude Pro/Max subscription or an
-  existing Claude Code login, and not covered by either.
+You don't need to know how to code to use Cortex. The one exception: if
+you're going with the Claude Code option above, that install involves a
+short trip to your computer's terminal app, but only to run the one command
+its own instructions give you.
 
-If you already have Claude Code set up for the bash version of Cortex, CLI
-mode is very likely what you want - same cost as what you're already paying.
+## Installing Cortex
+
+1. Open Obsidian, go to **Settings → Community plugins**, and make sure
+   community plugins are turned on.
+2. Install a plugin called **BRAT** — search for "BRAT" in the Community
+   plugins browser, click install, then enable it. BRAT is a tool that lets
+   Obsidian install plugins (like Cortex) that aren't in the official
+   directory yet.
+3. Open BRAT's settings (or use the command palette — `Cmd/Ctrl+P` — and
+   search "BRAT: Add a beta plugin").
+4. Paste in: `AndyMDH/obsidian-cortex`, then confirm.
+5. Go back to **Settings → Community plugins** and make sure **Cortex** is
+   turned on.
+
+That's it — no files to download by hand, no terminal for this part. BRAT
+will also keep Cortex updated for you automatically.
+
+## First-time setup
+
+Open **Settings → Cortex** in Obsidian:
+
+- **Execution mode**: choose "Claude Code CLI" if you have a Claude
+  subscription and installed Claude Code above, or "Direct API key" if
+  you're using an API key instead.
+- If you chose the API key option, paste your key into the **Anthropic API
+  key** field.
+- If you chose Claude Code and it's not being found automatically, see
+  "Something not working?" below.
+
+Everything else has a sensible default — you don't need to touch anything
+else to start using it.
+
+## How to use it day to day
+
+1. Create a new note in Obsidian (`Cmd/Ctrl+N`) and dictate or paste
+   whatever you want captured — a meeting, a thought, anything. New notes
+   land in the `00-Inbox` folder automatically.
+2. Within a few seconds (or the next time you open Obsidian), Cortex picks
+   it up on its own — no button to press. You can also trigger it manually
+   any time via the brain-circuit icon in the left sidebar, or the command
+   palette → "Cortex: Process inbox now."
+3. Check the `10-Meetings` folder — your note will show up there, tagged
+   and summarized, with your original text preserved underneath.
+4. Once a topic has 4 or more notes behind it, Cortex automatically writes
+   a summary page for that topic in `20-Wikis` — a single page that pulls
+   together everything you've captured about it so far.
+
+Your tags come from the `30-Tags` folder — one file per tag. Add a file
+there for any tag you want Cortex to be able to use (for example, a client
+or project name), and Cortex will start using it going forward instead of
+falling back to something more generic.
+
+## Something not working?
+
+- **Nothing happens after capturing a note**: open the command palette and
+  run "Cortex: Process inbox now" to trigger it manually and see if an
+  error notification appears.
+- **"Claude not found" or similar, in CLI mode**: Obsidian sometimes can't
+  find the `claude` program even though it works fine in your terminal.
+  Open a terminal, type `which claude`, and paste whatever path it gives
+  you into the **Claude CLI path** field in Settings → Cortex.
+- **Check the log**: your vault has a hidden `.cortex/pipeline.log` file
+  recording every note Cortex has processed and any errors — useful if
+  something seems off.
 
 ## Privacy & permissions
 
-Disclosed up front, per Obsidian's developer policy:
-
-- **Remote service used**: the [Anthropic API](https://www.anthropic.com/) (`api.anthropic.com`).
-  In CLI mode this call is made by the Claude Code CLI, not the plugin
-  itself; in API mode the plugin calls it directly. Either way, the only
-  data sent is the content of your captured notes (plus tag names and a
-  short index of recent note titles/snippets, for tagging and duplicate
-  detection) - nothing else in your vault is transmitted.
-- **File access outside the vault**: none. The plugin only reads/writes
+- **Remote service used**: the [Anthropic API](https://www.anthropic.com/).
+  In CLI mode this call is made by the Claude Code program, not the plugin
+  directly; in API mode the plugin calls it directly. Either way, the only
+  data sent is the content of your captured notes, plus your tag names and
+  a short list of recent note titles (used for tagging and duplicate
+  detection) — nothing else in your vault is transmitted.
+- **File access outside the vault**: none. Cortex only reads and writes
   files inside the current vault.
-- **Local process execution**: CLI mode spawns the `claude` CLI (a separate
-  program you installed yourself) as a child process, scoped to your vault's
-  folder, using the `--allowedTools Read,Write,Edit,Glob,Grep,Bash` and
-  `--permission-mode acceptEdits` flags so it can read/write your notes
-  without an interactive confirmation prompt per file. No other command is
-  ever executed. API mode does not spawn any process.
-- **Telemetry**: none, client- or server-side.
+- **Local program execution**: in CLI mode, Cortex runs the `claude`
+  program you installed yourself, scoped to your vault's folder, so it can
+  read and write your notes without asking for confirmation on every single
+  file. No other program is ever run. API mode doesn't run any program at
+  all.
+- **Telemetry**: none, ever.
 
-## Requirements
+## A few honest limitations
 
-- Obsidian
-- CLI mode: [Claude Code](https://docs.claude.com/claude-code), installed and
-  authenticated, on desktop
-- API mode: an [Anthropic API key](https://console.anthropic.com/settings/keys)
+- **Obsidian has to be open** to catch a new capture. If Obsidian is
+  closed, nothing runs until you open it again — at which point it catches
+  up on anything it missed.
+- **CLI mode only works on desktop**, not the mobile app, and needs Claude
+  Code installed separately. If you want this to work on your phone too,
+  use the "Direct API key" mode instead.
+- **The API key (if you use one) is stored as plain text** inside your
+  vault's settings file. Keep your vault out of any shared or public
+  backup you don't fully control.
+- **CLI mode is more thorough than API mode.** CLI mode lets Claude re-read
+  files and double-check itself while working; API mode asks for one
+  response per note in a single pass. Both work well for normal notes — CLI
+  mode has more room to get a tricky or ambiguous one right.
 
-## Install
+## For developers
 
-Not on the Community Plugins list. Two options:
-
-**BRAT (recommended)** - install the [BRAT](https://github.com/TfTHacker/obsidian42-brat)
-community plugin, then "Add beta plugin" → `AndyMDH/obsidian-cortex`. BRAT
-handles updates for you.
-
-**Manual** - download `main.js`, `manifest.json`, and `styles.css` (if
-present) from the [latest release](https://github.com/AndyMDH/obsidian-cortex/releases),
-and copy them into `<vault>/.obsidian/plugins/cortex/`. Then enable "Cortex"
-in Settings → Community plugins.
-
-After enabling, open Settings → Cortex to pick a mode and (for CLI mode) confirm
-the `claude` CLI path, or (for API mode) paste in your API key.
-
-## How it works
-
-```
-dictate/paste -> 00-Inbox/ -> enrich -> 10-Meetings/ -> wiki-builder -> 20-Wikis/
-```
-
-- **Enrichment**: a new note in `00-Inbox/` gets tagged (from your controlled
-  registry in `30-Tags/`, so no tag sprawl), summarized into Summary/Key
-  points/Decisions/Action items, and linked to related notes - your raw text
-  is always preserved verbatim underneath, never regenerated.
-- **Wikis**: once a tag has enough non-fragment notes behind it (default: 4),
-  a synthesized narrative wiki page appears in `20-Wikis/`, and every source
-  note gets a backlink to it - turning what would be a hairball of
-  meeting-to-meeting links into a readable hub-and-spoke graph.
-- **Trigger**: CLI mode reacts to new captures via a full inbox scan (near
-  the capture, and every time Obsidian starts, to catch anything missed while
-  it was closed); API mode reacts within seconds of a single new file. Manual
-  trigger any time either way: ribbon icon, or command palette → "Cortex:
-  Process inbox now" / "Cortex: Build/update wikis now".
-- A `.cortex/pipeline.log` file in your vault logs every enrichment,
-  duplicate, new tag, and wiki event in both modes, so you can see what
-  happened without re-reading every note.
-
-## Settings
-
-Execution mode, wiki threshold, auto-process on capture (on/off), and the
-four folder paths apply to both modes. CLI mode additionally has the Claude
-CLI path; API mode additionally has the API key, model, and duplicate-check
-lookback (how many recent notes to compare new captures against).
-
-## Limitations, honestly
-
-- **Obsidian has to be running** to catch a new capture, in either mode.
-  There's no background daemon like the bash version's `launchd` job - the
-  startup catch-up scan is the safety net, not a guarantee of same-day
-  processing if Obsidian stays closed.
-- **CLI mode is desktop only** and needs Claude Code installed separately -
-  it's a thinner wrapper around the same terminal tool, not a replacement
-  for it. GUI apps like Obsidian often start with a slimmer `PATH` than your
-  terminal, so if the plugin can't find `claude`, set the full path in
-  settings (`which claude` in your terminal will tell you what to use).
-- **API mode's key lives in plaintext** in this vault's
-  `.obsidian/plugins/cortex/data.json`. Keep this vault out of any repo or
-  sync you don't fully control.
-- **API mode is a single structured call, not an agentic loop.** CLI mode
-  lets Claude Code re-read files and self-correct across multiple tool calls,
-  same as the bash version; API mode asks for one structured response per
-  note. Good enough for straightforward captures, less room to recover on
-  genuinely ambiguous ones.
-- **API mode needs its own Anthropic API key, billed separately** from a
-  Claude Pro/Max subscription or an existing Claude Code login.
-
-## Development
+The rest of this section is only relevant if you want to modify Cortex's
+code — not needed to use the plugin.
 
 ```bash
 npm install
-npm run dev      # esbuild watch mode
-npm run build    # typecheck + production bundle -> main.js
-npm test         # unit tests for both execution modes (no live API/CLI calls)
+npm run dev      # rebuild automatically as you edit
+npm run build    # typecheck + produce the final main.js
+npm test         # run the test suite (no live API/CLI calls made)
 ```
 
-The core logic (`src/`) has no dependency on the Obsidian runtime and is
-unit-tested directly with Node's built-in test runner. `main.ts` wires that
-logic to the actual `obsidian` API (vault I/O, settings UI, commands, and -
-for CLI mode - spawning the `claude` process) and can only be exercised
-inside a real Obsidian instance.
+The core logic lives in `src/` and has no dependency on Obsidian itself, so
+it's tested directly with Node's built-in test runner. `main.ts` connects
+that logic to the real Obsidian app — the settings panel, reading/writing
+vault files, and (in CLI mode) running the `claude` program — and can only
+be tried out inside a real Obsidian install.
 
 ## License
 

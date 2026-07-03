@@ -1,12 +1,15 @@
 import {
 	App,
+	FileSystemAdapter,
 	Notice,
+	Platform,
 	Plugin,
 	PluginSettingTab,
 	Setting,
 	TFile,
 	requestUrl,
 } from "obsidian";
+import { execFile } from "child_process";
 import type { CortexSettings, EnrichResult, NoteIndexEntry, WikiSynthesisResult } from "./src/types";
 import { DEFAULT_SETTINGS } from "./src/types";
 import { AnthropicApiError, callClaudeTool } from "./src/anthropic";
@@ -20,6 +23,10 @@ import {
 	wikiUserMessage,
 } from "./src/prompts";
 import * as logic from "./src/logic";
+import { augmentedPath, buildEnrichArgs, buildWikiArgs, summarizeLogLines } from "./src/cliRunner";
+import type { CliExec } from "./src/cliRunner";
+import { meetingEnricherSkill, wikiBuilderSkill } from "./src/skillTemplates";
+import type { SkillFolders } from "./src/skillTemplates";
 
 const LOG_FOLDER = ".cortex";
 const LOG_FILE = `${LOG_FOLDER}/pipeline.log`;
@@ -27,6 +34,7 @@ const LOG_FILE = `${LOG_FOLDER}/pipeline.log`;
 export default class CortexPlugin extends Plugin {
 	settings: CortexSettings;
 	private inFlight = new Set<string>();
+	private cliRunInProgress = false;
 
 	async onload() {
 		await this.loadSettings();
@@ -54,7 +62,12 @@ export default class CortexPlugin extends Plugin {
 					if (file instanceof TFile && this.isInInbox(file)) {
 						// Dictation/sync tools sometimes create then immediately
 						// rewrite a file - give it a moment to settle before reading.
-						window.setTimeout(() => void this.processFile(file), 2000);
+						// CLI mode has no per-file granularity (one claude -p call
+						// processes the whole inbox), so it always goes through the
+						// same dispatcher as a manual run rather than processFile
+						// directly - the API-only method that would otherwise be
+						// called here regardless of execution mode.
+						window.setTimeout(() => void this.processInbox(), 2000);
 					}
 				})
 			);
@@ -78,6 +91,77 @@ export default class CortexPlugin extends Plugin {
 		const res = await requestUrl({ url, method: "POST", headers, body, throw: false });
 		return { status: res.status, text: res.text };
 	};
+
+	private cliExec: CliExec = (command, args, options) => {
+		return new Promise((resolve) => {
+			execFile(
+				command,
+				args,
+				{ cwd: options.cwd, env: options.env, maxBuffer: 20 * 1024 * 1024 },
+				(error, stdout, stderr) => {
+					const code = error ? (typeof (error as { code?: number }).code === "number" ? (error as { code: number }).code : 1) : 0;
+					resolve({ code, stdout: stdout?.toString() ?? "", stderr: stderr?.toString() ?? "" });
+				}
+			);
+		});
+	};
+
+	private getVaultBasePath(): string | null {
+		return this.app.vault.adapter instanceof FileSystemAdapter
+			? this.app.vault.adapter.getBasePath()
+			: null;
+	}
+
+	private cliEnv(): Record<string, string> {
+		const home = process.env.HOME ?? "";
+		return {
+			...(process.env as Record<string, string>),
+			PATH: augmentedPath(process.env.PATH ?? "", home, null),
+		};
+	}
+
+	private async ensureFolderExists(dirPath: string) {
+		if (!(await this.app.vault.adapter.exists(dirPath))) {
+			await this.app.vault.adapter.mkdir(dirPath);
+		}
+	}
+
+	private async ensureSkillsInstalled() {
+		const folders: SkillFolders = {
+			inbox: this.settings.inboxFolder,
+			meetings: this.settings.meetingsFolder,
+			wikis: this.settings.wikisFolder,
+			tags: this.settings.tagsFolder,
+		};
+		await this.writeSkillIfMissing(
+			".claude/skills/meeting-enricher/SKILL.md",
+			meetingEnricherSkill(folders)
+		);
+		await this.writeSkillIfMissing(".claude/skills/wiki-builder/SKILL.md", wikiBuilderSkill(folders));
+	}
+
+	private async writeSkillIfMissing(path: string, content: string) {
+		if (await this.app.vault.adapter.exists(path)) return;
+		const dir = path.substring(0, path.lastIndexOf("/"));
+		await this.ensureFolderExists(dir);
+		await this.app.vault.adapter.write(path, content);
+	}
+
+	private async readLogLineCount(): Promise<number> {
+		if (!(await this.app.vault.adapter.exists(LOG_FILE))) return 0;
+		const content = await this.app.vault.adapter.read(LOG_FILE);
+		return content.split("\n").filter((l) => l.length > 0).length;
+	}
+
+	private async readLogSince(beforeCount: number): Promise<string> {
+		if (!(await this.app.vault.adapter.exists(LOG_FILE))) return "";
+		const content = await this.app.vault.adapter.read(LOG_FILE);
+		return content
+			.split("\n")
+			.filter((l) => l.length > 0)
+			.slice(beforeCount)
+			.join("\n");
+	}
 
 	private isInInbox(file: TFile): boolean {
 		return (
@@ -159,6 +243,14 @@ export default class CortexPlugin extends Plugin {
 	}
 
 	async processInbox() {
+		if (this.settings.executionMode === "cli") {
+			await this.processInboxViaCli();
+		} else {
+			await this.processInboxViaApi();
+		}
+	}
+
+	async processInboxViaApi() {
 		const folder = this.app.vault.getFolderByPath(this.settings.inboxFolder);
 		if (!folder) return;
 		const files = folder.children.filter(
@@ -180,8 +272,111 @@ export default class CortexPlugin extends Plugin {
 
 		if (enriched > 0) {
 			new Notice(`Cortex: ${enriched} note${enriched === 1 ? "" : "s"} enriched.`);
-			await this.buildWikis();
+			await this.buildWikisViaApi();
 		}
+	}
+
+	private async processInboxViaCli() {
+		if (!Platform.isDesktopApp) {
+			new Notice("Cortex: CLI execution mode only works on desktop.", 10000);
+			return;
+		}
+		if (this.cliRunInProgress) return;
+		const basePath = this.getVaultBasePath();
+		if (!basePath) {
+			new Notice("Cortex: could not resolve this vault's filesystem path.", 10000);
+			return;
+		}
+
+		const folder = this.app.vault.getFolderByPath(this.settings.inboxFolder);
+		const hasFiles = folder?.children.some(
+			(f) => f instanceof TFile && (f.extension === "md" || f.extension === "txt")
+		);
+		if (!hasFiles) return;
+
+		this.cliRunInProgress = true;
+		try {
+			await this.runInboxCli(basePath);
+		} finally {
+			this.cliRunInProgress = false;
+		}
+	}
+
+	private async runInboxCli(basePath: string) {
+		await this.ensureSkillsInstalled();
+		const before = await this.readLogLineCount();
+		const env = this.cliEnv();
+
+		const enrichResult = await this.cliExec(
+			this.settings.claudeCliPath,
+			buildEnrichArgs(this.settings.inboxFolder),
+			{ cwd: basePath, env }
+		);
+		if (enrichResult.code !== 0) {
+			await this.appendLog(
+				`ERROR: meeting-enricher CLI exited ${enrichResult.code} - ${enrichResult.stderr.slice(0, 300)}`
+			);
+			new Notice(
+				`Cortex: enrichment failed (is "${this.settings.claudeCliPath}" the right CLI path?) - see .cortex/pipeline.log`,
+				10000
+			);
+			return;
+		}
+
+		const wikiResult = await this.cliExec(
+			this.settings.claudeCliPath,
+			buildWikiArgs(this.settings.meetingsFolder),
+			{ cwd: basePath, env }
+		);
+		if (wikiResult.code !== 0) {
+			await this.appendLog(
+				`ERROR: wiki-builder CLI exited ${wikiResult.code} - ${wikiResult.stderr.slice(0, 300)}`
+			);
+			new Notice("Cortex: wiki step failed - see .cortex/pipeline.log", 10000);
+			return;
+		}
+
+		const summary = summarizeLogLines(await this.readLogSince(before));
+		if (summary.enriched > 0) {
+			const parts = [`${summary.enriched} note${summary.enriched === 1 ? "" : "s"} enriched`];
+			if (summary.newWikis > 0) parts.push(`${summary.newWikis} new wiki${summary.newWikis === 1 ? "" : "s"}`);
+			if (summary.updatedWikis > 0)
+				parts.push(`${summary.updatedWikis} wiki${summary.updatedWikis === 1 ? "" : "s"} updated`);
+			new Notice(`Cortex: ${parts.join(", ")}.`);
+		}
+		if (summary.problems > 0) {
+			new Notice(`Cortex: ${summary.problems} item(s) skipped or errored - see .cortex/pipeline.log`, 8000);
+		}
+	}
+
+	private async runWikiBuilderCli() {
+		if (!Platform.isDesktopApp) {
+			new Notice("Cortex: CLI execution mode only works on desktop.", 10000);
+			return;
+		}
+		const basePath = this.getVaultBasePath();
+		if (!basePath) {
+			new Notice("Cortex: could not resolve this vault's filesystem path.", 10000);
+			return;
+		}
+		await this.ensureSkillsInstalled();
+		const before = await this.readLogLineCount();
+		const result = await this.cliExec(
+			this.settings.claudeCliPath,
+			buildWikiArgs(this.settings.meetingsFolder),
+			{ cwd: basePath, env: this.cliEnv() }
+		);
+		if (result.code !== 0) {
+			await this.appendLog(`ERROR: wiki-builder CLI exited ${result.code} - ${result.stderr.slice(0, 300)}`);
+			new Notice("Cortex: wiki step failed - see .cortex/pipeline.log", 10000);
+			return;
+		}
+		const summary = summarizeLogLines(await this.readLogSince(before));
+		const parts: string[] = [];
+		if (summary.newWikis > 0) parts.push(`${summary.newWikis} new wiki${summary.newWikis === 1 ? "" : "s"}`);
+		if (summary.updatedWikis > 0)
+			parts.push(`${summary.updatedWikis} wiki${summary.updatedWikis === 1 ? "" : "s"} updated`);
+		new Notice(parts.length > 0 ? `Cortex: ${parts.join(", ")}.` : "Cortex: no wikis to build or update.");
 	}
 
 	async processFile(file: TFile): Promise<boolean> {
@@ -249,6 +444,14 @@ export default class CortexPlugin extends Plugin {
 	}
 
 	async buildWikis() {
+		if (this.settings.executionMode === "cli") {
+			await this.runWikiBuilderCli();
+		} else {
+			await this.buildWikisViaApi();
+		}
+	}
+
+	async buildWikisViaApi() {
 		const meetingsFolder = this.app.vault.getFolderByPath(this.settings.meetingsFolder);
 		if (!meetingsFolder) return;
 		const noteFiles = meetingsFolder.children.filter(
@@ -433,31 +636,74 @@ class CortexSettingTab extends PluginSettingTab {
 		containerEl.empty();
 
 		new Setting(containerEl)
-			.setName("Anthropic API key")
+			.setName("Execution mode")
 			.setDesc(
-				"Stored locally in this vault's .obsidian/plugins/cortex/data.json - keep this vault out of any repo or sync you don't fully control."
+				this.plugin.settings.executionMode === "cli"
+					? "Shells out to the Claude Code CLI, using whatever auth it already has (subscription or API key) - no separate billing, but desktop only and requires Claude Code installed."
+					: "Calls the Anthropic API directly with the key below - works on mobile too, but is billed separately from a Claude subscription/Claude Code login."
 			)
-			.addText((text) =>
-				text
-					.setPlaceholder("sk-ant-...")
-					.setValue(this.plugin.settings.apiKey)
+			.addDropdown((dropdown) => {
+				dropdown
+					.addOption("cli", "Claude Code CLI (uses your subscription)")
+					.addOption("api", "Direct API key")
+					.setValue(this.plugin.settings.executionMode)
 					.onChange(async (value) => {
-						this.plugin.settings.apiKey = value.trim();
+						this.plugin.settings.executionMode = value === "api" ? "api" : "cli";
 						await this.plugin.saveSettings();
-					})
-			);
+						this.display();
+					});
+			});
 
-		new Setting(containerEl)
-			.setName("Model")
-			.setDesc("Anthropic model id used for both enrichment and wiki synthesis.")
-			.addText((text) =>
-				text
-					.setValue(this.plugin.settings.model)
-					.onChange(async (value) => {
-						this.plugin.settings.model = value.trim();
-						await this.plugin.saveSettings();
-					})
-			);
+		if (!Platform.isDesktopApp && this.plugin.settings.executionMode === "cli") {
+			containerEl.createEl("p", {
+				text: "CLI mode doesn't work on mobile - switch to Direct API key here, or use this device only to browse the vault.",
+				cls: "mod-warning",
+			});
+		}
+
+		if (this.plugin.settings.executionMode === "cli") {
+			new Setting(containerEl)
+				.setName("Claude CLI path")
+				.setDesc(
+					'Command or full path to the Claude Code CLI. Obsidian (an Electron app) often starts with a slimmer PATH than your terminal, so if "claude" isn\'t found, try the full path (e.g. from running `which claude` in your terminal).'
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder("claude")
+						.setValue(this.plugin.settings.claudeCliPath)
+						.onChange(async (value) => {
+							this.plugin.settings.claudeCliPath = value.trim() || "claude";
+							await this.plugin.saveSettings();
+						})
+				);
+		} else {
+			new Setting(containerEl)
+				.setName("Anthropic API key")
+				.setDesc(
+					"Stored locally in this vault's .obsidian/plugins/cortex/data.json - keep this vault out of any repo or sync you don't fully control."
+				)
+				.addText((text) =>
+					text
+						.setPlaceholder("sk-ant-...")
+						.setValue(this.plugin.settings.apiKey)
+						.onChange(async (value) => {
+							this.plugin.settings.apiKey = value.trim();
+							await this.plugin.saveSettings();
+						})
+				);
+
+			new Setting(containerEl)
+				.setName("Model")
+				.setDesc("Anthropic model id used for both enrichment and wiki synthesis.")
+				.addText((text) =>
+					text
+						.setValue(this.plugin.settings.model)
+						.onChange(async (value) => {
+							this.plugin.settings.model = value.trim();
+							await this.plugin.saveSettings();
+						})
+				);
+		}
 
 		new Setting(containerEl)
 			.setName("Auto-process on capture")
@@ -483,18 +729,23 @@ class CortexSettingTab extends PluginSettingTab {
 				})
 			);
 
-		new Setting(containerEl)
-			.setName("Duplicate-check lookback")
-			.setDesc("How many of the most recent meeting notes to compare new captures against for duplicates and related-note linking.")
-			.addText((text) =>
-				text.setValue(String(this.plugin.settings.dedupLookback)).onChange(async (value) => {
-					const n = parseInt(value, 10);
-					if (!Number.isNaN(n) && n > 0) {
-						this.plugin.settings.dedupLookback = n;
-						await this.plugin.saveSettings();
-					}
-				})
-			);
+		if (this.plugin.settings.executionMode === "api") {
+			// CLI mode's duplicate check is handled by the skill itself, reading
+			// the meetings folder directly via its own Bash/Glob tool access, so
+			// there's no lookback count to configure on the plugin side.
+			new Setting(containerEl)
+				.setName("Duplicate-check lookback")
+				.setDesc("How many of the most recent meeting notes to compare new captures against for duplicates and related-note linking.")
+				.addText((text) =>
+					text.setValue(String(this.plugin.settings.dedupLookback)).onChange(async (value) => {
+						const n = parseInt(value, 10);
+						if (!Number.isNaN(n) && n > 0) {
+							this.plugin.settings.dedupLookback = n;
+							await this.plugin.saveSettings();
+						}
+					})
+				);
+		}
 
 		containerEl.createEl("h3", { text: "Folders" });
 

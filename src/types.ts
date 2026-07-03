@@ -1,6 +1,10 @@
+export type ExecutionMode = "api" | "cli";
+
 export interface CortexSettings {
+	executionMode: ExecutionMode;
 	apiKey: string;
 	model: string;
+	claudeCliPath: string;
 	inboxFolder: string;
 	meetingsFolder: string;
 	wikisFolder: string;
@@ -11,8 +15,10 @@ export interface CortexSettings {
 }
 
 export const DEFAULT_SETTINGS: CortexSettings = {
+	executionMode: "cli",
 	apiKey: "",
 	model: "claude-sonnet-5",
+	claudeCliPath: "claude",
 	inboxFolder: "00-Inbox",
 	meetingsFolder: "10-Meetings",
 	wikisFolder: "20-Wikis",

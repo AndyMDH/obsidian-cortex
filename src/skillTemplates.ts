@@ -4,9 +4,9 @@
 // adapted so the plugin can write them into any vault's .claude/skills/
 // folder itself - CLI mode doesn't depend on the bash repo being installed
 // separately. Folder names are interpolated so they track this plugin's
-// settings instead of being hardcoded to 00-Inbox/10-Meetings/etc.
+// settings instead of being hardcoded to 00-Inbox/10-Notes/etc.
 
-import { IMAGE_EXTENSIONS } from "./logic.ts";
+import { HEIC_EXTENSIONS, IMAGE_EXTENSIONS, PDF_EXTENSIONS } from "./logic.ts";
 
 export interface SkillFolders {
 	inbox: string;
@@ -16,6 +16,8 @@ export interface SkillFolders {
 }
 
 const IMAGE_EXTENSIONS_MD = IMAGE_EXTENSIONS.map((e) => `\`.${e}\``).join(", ");
+const HEIC_EXTENSIONS_MD = HEIC_EXTENSIONS.map((e) => `\`.${e}\``).join(", ");
+const PDF_EXTENSIONS_MD = PDF_EXTENSIONS.map((e) => `\`.${e}\``).join(", ");
 
 export function meetingEnricherSkill(f: SkillFolders): string {
 	return `---
@@ -32,22 +34,26 @@ Vault root is the current working directory. All paths below are relative to it.
 
 ## Scope
 
-Process every \`.md\`, \`.txt\`, and image file (${IMAGE_EXTENSIONS_MD} - not
-HEIC or GIF, unsupported) directly inside \`${f.inbox}/\` (not
-\`${f.inbox}/duplicates/\`). Process files **one at a time, fully, before moving to
-the next** — read, enrich, move, log, then proceed.
+Process every \`.md\`, \`.txt\`, image file (${IMAGE_EXTENSIONS_MD}, plus
+${HEIC_EXTENSIONS_MD} - see the HEIC/HEIF conversion note in Step 1 - not GIF,
+unsupported), and PDF file (${PDF_EXTENSIONS_MD}) directly inside
+\`${f.inbox}/\` (not \`${f.inbox}/duplicates/\`). Process files **one at a
+time, fully, before moving to the next** — read, enrich, move, log, then
+proceed.
 
 Skip a file if its frontmatter already contains \`status: enriched\` — it's
 already been processed. This is the idempotency guard; it means it's always
-safe to re-run this skill over an inbox that partially succeeded before. (Image
-files never have frontmatter of their own, so this guard only applies once
-they've already been turned into a note in \`${f.meetings}/\` - at that point the
-original image is gone from \`${f.inbox}/\`, so there's nothing left to re-skip.)
+safe to re-run this skill over an inbox that partially succeeded before.
+(Image and PDF files never have frontmatter of their own, so this guard only
+applies once they've already been turned into a note in \`${f.meetings}/\` -
+at that point the original file is gone from \`${f.inbox}/\`, so there's
+nothing left to re-skip.)
 
 ## Step 0 — Duplicate check
 
-Skip this step entirely for image files - two photos are essentially never an
-exact duplicate of each other, and there's no transcript body to compare.
+Skip this step entirely for image and PDF files - two photos or two documents
+are essentially never an exact duplicate of each other, and there's no
+transcript body to compare.
 
 For text files: read the first ~200 characters of the inbox file's body
 (ignore any frontmatter if present). Compare against the first ~200 characters
@@ -61,23 +67,34 @@ closely enough that it's clearly the same transcript:
 
 ## Step 1 — Classify
 
-If the file is an image, use the Read tool to view it directly (Claude Code
-can read image files, not just text) - do not attempt to read it as text.
+**If the file is HEIC/HEIF (${HEIC_EXTENSIONS_MD}), convert it to JPEG first**,
+before doing anything else with it: \`sips -s format jpeg <file> --out <same
+name, .jpg extension, in the same ${f.inbox}/ directory>\` via Bash. Obsidian's
+own note preview can't render HEIC at all (no native decoder), so the file
+that ends up embedded/moved in Step 6 must be the converted JPEG, not the
+original HEIC - delete the original HEIC after a successful conversion, and
+treat the new \`.jpg\` as the file being processed for the rest of these steps.
+
+If the file is an image (including a HEIC that's now a JPEG per above) or a
+PDF, use the Read tool to view it directly (Claude Code can read image and PDF
+files natively, not just text) - do not attempt to read either as text.
 Otherwise read the full transcript. Decide:
 
-- **type**: \`meeting\` if it reads like (or shows, for an image - e.g. a
-  whiteboard from a meeting) a conversation/discussion between people, \`note\`
-  if it's a single-person idea, reflection, screenshot of an article, or
-  fragment with no attendees/decisions/actions structure.
+- **type**: \`meeting\` if it reads like (or shows/describes, for an image or
+  PDF - e.g. a whiteboard from a meeting, or scanned meeting minutes) a
+  conversation/discussion between people, \`note\` if it's a single-person idea,
+  reflection, screenshot/document of an article, or fragment with no
+  attendees/decisions/actions structure.
 - **word count**: if the body is under ~50 words, this is a \`fragment\` regardless
   of type — it still gets frontmatter and moves to \`${f.meetings}/\`, but skip wiki
   eligibility (wiki-builder won't count it) and always include the \`fragment\`
-  tag in addition to any other applicable tag(s). Images are never fragments
-  purely for being an image - judge by how much content is actually in them.
+  tag in addition to any other applicable tag(s). Images and PDFs are never
+  fragments purely for being an image/PDF - judge by how much content is
+  actually in them.
 - **source**: \`handy\` if it reads like raw dictation (first-person, informal,
   no clear multi-speaker turn-taking); \`pasted\` if it has clear speaker labels
   or formatting suggesting it was copied from Teams/Zoom/Granola; \`photo\` if
-  the file is an image.
+  the file is an image; \`document\` if the file is a PDF.
 
 ## Step 2 — Frontmatter
 
@@ -175,10 +192,10 @@ aren't actually in the transcript.
 It moves intact, verbatim, under \`## Transcript\`. Enrichment adds structure
 above it; it does not touch the source material.
 
-**For an image file, there is no transcript.** Replace the \`## Transcript\`
-section with \`## Captured image\` containing only \`![[<final image
-filename>]]\` (see Step 6 for the final filename) - nothing else in that
-section, no description duplicated from the Summary above it.
+**For an image or PDF file, there is no transcript.** Replace the \`## Transcript\`
+section with \`## Captured image\` (image) or \`## Captured document\` (PDF)
+containing only \`![[<final filename>]]\` (see Step 6 for the final filename) -
+nothing else in that section, no description duplicated from the Summary above it.
 
 ## Step 5 — Relations
 
@@ -212,12 +229,14 @@ the same topic name. If linking to an existing wiki, use its actual filename
    etc.) but keep it human-readable.
 2. Write the fully enriched content to \`${f.meetings}/<final filename>\`.
 3. For a text file: remove the original from \`${f.inbox}/\` - its content is
-   now fully copied into the new note. **For an image file: move (rename) it
-   into \`${f.meetings}/\` instead of deleting it**, using the same date+title
-   as the note but keeping the image's original extension (e.g.
+   now fully copied into the new note. **For an image or PDF file: move
+   (rename) it into \`${f.meetings}/\` instead of deleting it**, using the same
+   date+title as the note but keeping the file's original extension (e.g.
    \`2026-07-06 Whiteboard Sketch.png\` next to \`2026-07-06 Whiteboard
-   Sketch.md\`) - this is the file the \`## Captured image\` embed points to, so
-   it must actually exist at that path afterward, not be deleted.
+   Sketch.md\`, or \`2026-07-06 Q2 Report.pdf\` next to \`2026-07-06 Q2
+   Report.md\`) - this is the file the \`## Captured image\`/\`## Captured
+   document\` embed points to, so it must actually exist at that path
+   afterward, not be deleted.
 4. Append to \`.cortex/pipeline.log\`:
    \`<ISO timestamp> ENRICHED: <final filename> - tags: [<tags>] - project: <project>\`
 
@@ -233,6 +252,68 @@ the same topic name. If linking to an existing wiki, use its actual filename
   unreadable), skip it and log:
   \`<ISO timestamp> SKIPPED: <filename> - <reason>\`
   Leave it in \`${f.inbox}/\` for manual review rather than guessing.
+`;
+}
+
+export function vaultQuerySkill(f: SkillFolders): string {
+	return `---
+name: vault-query
+description: Answer a natural-language question by searching ${f.meetings}/, ${f.wikis}/, and ${f.tags}/ and synthesizing a direct answer with citations. Use when asked to look something up, find notes about a topic, or answer a question against the vault.
+---
+
+# Vault Query
+
+Answers a question against the existing knowledge graph. This skill is
+**read-only** — it never edits, moves, or creates any file. Its entire output
+is the final answer text; there is nothing else to check afterward.
+
+Vault root is the current working directory. All paths below are relative to it.
+
+## Step 1 — Search
+
+Start from whichever of these is the best entry point for the question, not
+necessarily in this order:
+
+- \`${f.wikis}/*.md\` — already-synthesized narratives, one per topic. Best
+  first stop for "what's the state of X" or "what have we decided about X"
+  questions, since the synthesis work is already done.
+- \`${f.meetings}/*.md\` frontmatter (\`tags\`, \`project\`, \`date\`, \`attendees\`)
+  — best for "when did X happen", "who was in the meeting about X", or
+  narrowing by project/date.
+- \`${f.tags}/*.md\` — the controlled tag vocabulary; use this to find the
+  right tag name for a fuzzy topic before grepping for it (e.g. the question
+  says "KLM" but the tag is \`air-france-klm\`).
+- Full-text grep across \`${f.meetings}/\` when the question is about a
+  specific detail (a name, a number, a decision) that's unlikely to have
+  survived into a wiki's synthesized narrative.
+
+Read enough source notes in full to answer accurately — don't answer from
+filenames or frontmatter alone once you've identified likely candidates. If a
+note embeds a captured image or PDF (\`## Captured image\`/\`## Captured
+document\`), use the Read tool to view that file directly rather than relying
+on the note's text description of it.
+
+## Step 2 — Answer
+
+Write a direct answer, not a list of links:
+
+- Lead with the answer itself, in 1-4 sentences of prose.
+- Cite sources inline as \`[[wikilink]]\`s (wiki pages use the \` Wiki\` suffix,
+  e.g. \`[[dbt Wiki]]\`; meeting notes use their exact filename without \`.md\`).
+- If the question spans a topic with an existing wiki, cite the wiki and
+  only drop into individual meeting notes for details the wiki doesn't cover.
+- If notes disagree or a decision changed over time, say so explicitly and
+  give the timeline rather than picking one silently.
+- If nothing in the vault answers the question, say that plainly — do not
+  guess or answer from general knowledge instead of the vault's content.
+
+## Rules of engagement
+
+- Never use Write, Edit, or Bash commands that modify files — Read, Grep, and
+  Glob only. This skill must not change anything in the vault.
+- Don't pad the answer with a restated question, a "based on my search"
+  preamble, or a summary of your search process — the answer text is shown
+  to the user directly, exactly as written.
 `;
 }
 

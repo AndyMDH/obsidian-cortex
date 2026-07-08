@@ -16,6 +16,7 @@ export interface CortexSettings {
 	meetingsFolder: string;
 	wikisFolder: string;
 	tagsFolder: string;
+	queriesFolder: string;
 	wikiThreshold: number;
 	autoProcessOnCreate: boolean;
 	dedupLookback: number;
@@ -34,9 +35,10 @@ export const DEFAULT_SETTINGS: CortexSettings = {
 	localBaseUrl: "http://localhost:11434/v1",
 	claudeCliPath: "claude",
 	inboxFolder: "00-Inbox",
-	meetingsFolder: "10-Meetings",
-	wikisFolder: "20-Wikis",
-	tagsFolder: "30-Tags",
+	meetingsFolder: "10-Notes",
+	wikisFolder: "30-Wikis",
+	tagsFolder: "20-Tags",
+	queriesFolder: "40-Queries",
 	wikiThreshold: 4,
 	autoProcessOnCreate: true,
 	dedupLookback: 50,
@@ -60,7 +62,7 @@ export interface EnrichResult {
 	date: string;
 	title: string;
 	attendees: string[];
-	source: "handy" | "pasted" | "photo";
+	source: "handy" | "pasted" | "photo" | "document";
 	project: string;
 	tags: string[];
 	new_tag: { name: string; justification: string } | null;

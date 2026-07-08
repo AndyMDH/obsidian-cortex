@@ -44,7 +44,7 @@ test("callTool sends a data-URI image_url block alongside the text when an image
 	const provider = new OpenAiCompatibleProvider(mockPost, "key", "model", "https://api.openai.com/v1");
 	await provider.callTool(
 		"sys",
-		{ text: "describe this", image: { mediaType: "image/png", base64Data: "abc123" } },
+		{ text: "describe this", attachment: { kind: "image", mediaType: "image/png", base64Data: "abc123" } },
 		TOOL
 	);
 	const parsedBody = JSON.parse(capturedBody);
@@ -52,6 +52,25 @@ test("callTool sends a data-URI image_url block alongside the text when an image
 		{ type: "text", text: "describe this" },
 		{ type: "image_url", image_url: { url: "data:image/png;base64,abc123" } },
 	]);
+});
+
+test("callTool rejects a document attachment before making a request - PDFs aren't supported on this provider", async () => {
+	let called = false;
+	const mockPost: HttpPost = async () => {
+		called = true;
+		return { status: 200, text: "{}" };
+	};
+	const provider = new OpenAiCompatibleProvider(mockPost, "key", "model", "https://api.openai.com/v1");
+	await assert.rejects(
+		() =>
+			provider.callTool(
+				"sys",
+				{ text: "summarize this", attachment: { kind: "document", mediaType: "application/pdf", base64Data: "abc123" } },
+				TOOL
+			),
+		/does not support PDF/
+	);
+	assert.equal(called, false);
 });
 
 test("callTool sends bearer auth and forces the tool via tool_choice", async () => {

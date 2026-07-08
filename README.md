@@ -69,10 +69,10 @@ Settings → Paste method → "External script"). Then:
 2. Cortex picks it up within a few seconds once Obsidian's open — no button
    to press. Trigger it manually any time via the brain-circuit icon in the
    left sidebar, or the command palette → "Cortex: Process inbox now."
-3. Check `10-Meetings` — tagged, summarized, your original text preserved
+3. Check `10-Notes` — tagged, summarized, your original text preserved
    underneath.
 4. Once a topic has 4 or more notes behind it, Cortex writes a summary page
-   for it in `20-Wikis`, pulling together everything captured about it so far.
+   for it in `30-Wikis`, pulling together everything captured about it so far.
 
 No dictation tool with that option? Create a note by hand (`Cmd/Ctrl+N`) and
 paste or type into it instead — same result, one extra step.
@@ -82,27 +82,99 @@ the dictation tool, not per-hotkey — turning it on means that tool stops
 typing transcribed text into other apps, since transcription now goes to the
 script instead. Skip it if you use that hotkey for other apps too.
 
-Tags come from the `30-Tags` folder — one file per tag. Add a file there for
+Tags come from the `20-Tags` folder — one file per tag. Add a file there for
 any tag you want Cortex to use (a client or project name, say), and Cortex
 will prefer it over inventing something more generic.
 
 ### Photos and screenshots
 
-Drop a `.png`, `.jpg`/`.jpeg`, or `.webp` file into `00-Inbox` (a whiteboard
-photo, a screenshot) and Cortex enriches it the same way — tagged, summarized,
-with the image itself embedded in the resulting note instead of a transcript.
+Drop a `.png`, `.jpg`/`.jpeg`, `.webp`, or `.heic`/`.heif` file into `00-Inbox`
+(a whiteboard photo, a screenshot, an iPhone photo) and Cortex enriches it the
+same way — tagged, summarized, with the image itself embedded in the
+resulting note instead of a transcript.
 
-A few things to know:
-- Not HEIC or GIF — inconsistent support across providers' vision APIs, no
-  conversion step. (iOS's Share sheet commonly re-encodes to JPEG anyway, so
-  this bites less often than it sounds.)
-- No resizing — a full-resolution phone photo can fail specifically on
-  Anthropic (its practical cap is ~5MB) while working fine on OpenAI/Gemini.
-  Downscale it first if that happens.
+HEIC/HEIF (the default format for iPhone photos) is always converted to JPEG
+first, on both the API and provider side — Obsidian's own note preview can't
+render HEIC at all (no native decoder), and Anthropic/OpenAI's vision APIs
+reject it outright regardless of that. **Conversion needs macOS** (it shells
+out to the built-in `sips` tool) — on Windows/Linux desktop or mobile, a HEIC
+capture is left in the inbox with a clear error instead of failing silently.
+
+A few other things to know:
+- Not GIF — inconsistent support across providers' vision APIs, no
+  conversion step.
+- No resizing — a full-resolution photo can fail specifically on Anthropic
+  (its practical cap is ~5MB) while working fine on OpenAI/Gemini. Downscale
+  it first if that happens.
 - One image per note. Multiple images in one capture isn't supported yet.
 - If you're on Direct API key mode with the Local provider, check your
   model actually supports vision — a text-only local model (Ollama's default
   `llama3.1`, for example) will just error out on an image.
+
+#### Automating Mac screenshots
+
+[`examples/screenshot-capture.sh`](examples/screenshot-capture.sh) does for
+screenshots what `dictation-capture.sh` does for dictation: a launchd job
+watches your screenshot folder and moves new screenshots straight into
+`00-Inbox` — `Cmd+Shift+4`, and it just shows up enriched, no manual step.
+
+Edit the variables at the top of the script, then install the watcher:
+
+```bash
+cp screenshot-capture.sh ~/somewhere/permanent/  # not a temp folder
+chmod +x ~/somewhere/permanent/screenshot-capture.sh
+```
+
+```xml
+<!-- ~/Library/LaunchAgents/com.yourname.screenshotcapture.plist -->
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.yourname.screenshotcapture</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-lc</string>
+        <string>/full/path/to/screenshot-capture.sh</string>
+    </array>
+    <key>WatchPaths</key>
+    <array>
+        <string>/Users/yourname/Desktop</string>
+    </array>
+</dict>
+</plist>
+```
+
+```bash
+launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.yourname.screenshotcapture.plist
+```
+
+`WatchPaths` fires the script the moment anything changes in that folder -
+the script itself is what filters down to actual screenshots (macOS's
+`Screenshot YYYY-MM-DD at H.MM.SS.png` naming), so it won't sweep up
+unrelated files sitting in the same folder.
+
+### Documents (PDF)
+
+Drop a `.pdf` file into `00-Inbox` and Cortex enriches it the same way —
+tagged, summarized, with the document itself embedded in the resulting note
+instead of a transcript.
+
+On Anthropic and Gemini, the PDF is sent as a native document input and the
+model reads its actual content (text, layout, any images inside it) — no OCR
+or conversion step. **OpenAI-compatible and Local providers don't support PDF
+ingestion through Cortex** — there's no reliable way to carry a PDF through
+the `image_url` convention those APIs use for vision, so Cortex fails fast
+with a clear error instead of silently mangling the file. Switch to Anthropic
+or Gemini for PDF captures, or use CLI execution mode (which shells out to
+Claude Code, and can read PDFs directly regardless of API provider settings).
+
+A few other things to know:
+- One document per note, same as images.
+- No page-count/size cap enforced by Cortex itself — very large PDFs may hit
+  the provider's own limits.
 
 ## Something not working?
 

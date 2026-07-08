@@ -23,9 +23,13 @@ export class GeminiProvider implements LlmProvider {
 			throw new Error("No Gemini API key configured. Set one in Cortex plugin settings.");
 		}
 
+		// inline_data is generic over mime_type - Gemini accepts application/pdf
+		// here the same way it accepts image/*, so no per-kind branching needed.
 		const parts: Record<string, unknown>[] = [{ text: message.text }];
-		if (message.image) {
-			parts.push({ inline_data: { mime_type: message.image.mediaType, data: message.image.base64Data } });
+		if (message.attachment) {
+			parts.push({
+				inline_data: { mime_type: message.attachment.mediaType, data: message.attachment.base64Data },
+			});
 		}
 
 		const body = JSON.stringify({

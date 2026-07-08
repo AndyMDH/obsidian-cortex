@@ -22,12 +22,28 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 	}
 
 	async callTool<T>(system: string, message: LlmMessage, tool: LlmTool, maxTokens = 4096): Promise<T> {
-		const userContent = message.image
+		// image_url/data-URI is an image-specific convention - there's no
+		// reliable equivalent for a PDF across "any OpenAI-compatible backend"
+		// (Ollama, Groq, OpenRouter, etc.), so fail fast with a clear message
+		// instead of sending a document that's likely to be silently mishandled.
+		if (message.attachment?.kind === "document") {
+			// Deliberately a plain Error, not LlmApiError: processFile's catch only
+			// special-cases LlmApiError (an HTTP response it got back) and would
+			// otherwise show "(0)" with no body text - a plain Error re-throws to
+			// processInboxViaApi's outer catch, which surfaces e.message as-is.
+			throw new Error(
+				"This provider does not support PDF/document ingestion in Cortex - switch to Anthropic or Gemini in plugin settings, or use CLI execution mode."
+			);
+		}
+
+		const userContent = message.attachment
 			? [
 					{ type: "text", text: message.text },
 					{
 						type: "image_url",
-						image_url: { url: `data:${message.image.mediaType};base64,${message.image.base64Data}` },
+						image_url: {
+							url: `data:${message.attachment.mediaType};base64,${message.attachment.base64Data}`,
+						},
 					},
 				]
 			: message.text;

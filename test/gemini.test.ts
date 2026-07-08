@@ -38,13 +38,37 @@ test("callTool sends an inline_data part alongside the text when an image is giv
 	const provider = new GeminiProvider(mockPost, "key", "model");
 	await provider.callTool(
 		"sys",
-		{ text: "describe this", image: { mediaType: "image/png", base64Data: "abc123" } },
+		{ text: "describe this", attachment: { kind: "image", mediaType: "image/png", base64Data: "abc123" } },
 		TOOL
 	);
 	const parsedBody = JSON.parse(capturedBody);
 	assert.deepEqual(parsedBody.contents[0].parts, [
 		{ text: "describe this" },
 		{ inline_data: { mime_type: "image/png", data: "abc123" } },
+	]);
+});
+
+test("callTool sends an inline_data part with a PDF mime type when a document attachment is given", async () => {
+	let capturedBody = "";
+	const mockPost: HttpPost = async (_url, _headers, body) => {
+		capturedBody = body;
+		return {
+			status: 200,
+			text: JSON.stringify({
+				candidates: [{ content: { parts: [{ functionCall: { name: "test_tool", args: {} } }] } }],
+			}),
+		};
+	};
+	const provider = new GeminiProvider(mockPost, "key", "model");
+	await provider.callTool(
+		"sys",
+		{ text: "summarize this", attachment: { kind: "document", mediaType: "application/pdf", base64Data: "abc123" } },
+		TOOL
+	);
+	const parsedBody = JSON.parse(capturedBody);
+	assert.deepEqual(parsedBody.contents[0].parts, [
+		{ text: "summarize this" },
+		{ inline_data: { mime_type: "application/pdf", data: "abc123" } },
 	]);
 });
 

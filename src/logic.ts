@@ -12,16 +12,35 @@ export function wikiFilename(topic: string): string {
 	return `${sanitizeFilename(topic)} Wiki.md`;
 }
 
-// Not HEIC (inconsistent vision-API support) or GIF (animated-frame
-// ambiguity, inconsistent support) - disclosed limitation, no conversion step.
+// Natively viewable in Obsidian and accepted as-is by every provider's vision
+// API - no conversion needed. Not GIF (animated-frame ambiguity, inconsistent
+// provider support) - disclosed limitation, no conversion step for that one.
 export const IMAGE_EXTENSIONS = ["png", "jpg", "jpeg", "webp"];
+
+// HEIC/HEIF: Obsidian's Electron/Chromium preview can't render these at all
+// (no native HEIC decoder - the reason HEIC-preview community plugins exist),
+// and Anthropic/OpenAI's vision APIs reject them outright regardless. Always
+// converted to JPEG before storage or any provider call - see
+// convertHeicToJpeg in main.ts (API mode) and the CLI skill's own sips step.
+export const HEIC_EXTENSIONS = ["heic", "heif"];
+
+// Anthropic and Gemini both accept a PDF as a native document input (no
+// conversion needed, unlike HEIC). OpenAI-compatible/local providers don't
+// support it through this plugin - see the guard in openaiCompatible.ts.
+export const PDF_EXTENSIONS = ["pdf"];
 
 export function isCaptureFile(extension: string): boolean {
 	const ext = extension.toLowerCase();
-	return ext === "md" || ext === "txt" || IMAGE_EXTENSIONS.includes(ext);
+	return (
+		ext === "md" ||
+		ext === "txt" ||
+		IMAGE_EXTENSIONS.includes(ext) ||
+		HEIC_EXTENSIONS.includes(ext) ||
+		PDF_EXTENSIONS.includes(ext)
+	);
 }
 
-export function meetingImageFilename(date: string, title: string, extension: string): string {
+export function meetingAttachmentFilename(date: string, title: string, extension: string): string {
 	return `${date} ${sanitizeFilename(title)}.${extension}`;
 }
 
@@ -104,12 +123,17 @@ export function firstSentence(text: string): string {
 	return (match ? match[0] : collapsed).trim();
 }
 
+export interface CapturedAttachment {
+	filename: string;
+	kind: "image" | "document";
+}
+
 export function buildMeetingMarkdown(
 	result: EnrichResult,
 	rawTranscript: string,
 	enrichedAt: string,
 	existingWikiLink: string | null,
-	capturedImageFilename?: string
+	capturedAttachment?: CapturedAttachment
 ): string {
 	const fmLines = [
 		"---",
@@ -148,8 +172,10 @@ export function buildMeetingMarkdown(
 		);
 	}
 
-	if (capturedImageFilename) {
-		bodyParts.push(`## Captured image\n\n![[${capturedImageFilename}]]`);
+	if (capturedAttachment?.kind === "document") {
+		bodyParts.push(`## Captured document\n\n![[${capturedAttachment.filename}]]`);
+	} else if (capturedAttachment) {
+		bodyParts.push(`## Captured image\n\n![[${capturedAttachment.filename}]]`);
 	} else {
 		bodyParts.push(`## Transcript\n\n${rawTranscript.trim()}`);
 	}

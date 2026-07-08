@@ -10,10 +10,13 @@ export function enrichSystemPrompt(tagRegistry: string[]): string {
 ## Classify
 - type: "meeting" if the text reads like a conversation/discussion between people, "note" if it's a single-person idea, reflection, or fragment with no attendees/decisions/actions structure.
 - is_fragment: true if the body is under ~50 words, regardless of type. Fragments still get enriched normally but are excluded from wiki-eligibility counting by the caller.
-- source: "handy" if it reads like raw dictation (first-person, informal, no clear multi-speaker turn-taking), "pasted" if it has clear speaker labels or formatting suggesting it was copied from Teams/Zoom/Granola, "photo" if you were given an image instead of text.
+- source: "handy" if it reads like raw dictation (first-person, informal, no clear multi-speaker turn-taking), "pasted" if it has clear speaker labels or formatting suggesting it was copied from Teams/Zoom/Granola, "photo" if you were given an image instead of text, "document" if you were given a PDF instead of text.
 
 ## If given an image instead of text
 Describe what's visible (whiteboard notes, a diagram, a screenshot, etc.) and enrich based on that description - classify/tag/summarize the same as you would a transcript covering the same content. Always set source: "photo" and type based on what the image actually shows (a whiteboard from a meeting is usually "meeting"; a screenshot of an article or a personal sketch is usually "note"). Two photos are essentially never an exact duplicate of each other or of a text capture - only set is_duplicate true if this is clearly a repeat of the exact same image/whiteboard state already captured, per the existing notes index below.
+
+## If given a PDF instead of text
+Read the actual document content (not just its filename) and enrich based on it - classify/tag/summarize the same as you would a transcript covering the same material. Always set source: "document" and type based on what the PDF actually is (a scanned meeting agenda/minutes is usually "meeting"; an article, report, or reference document is usually "note"). Only set is_duplicate true if this is clearly the same document already captured, per the existing notes index below.
 
 ## Date
 Priority order: (1) an explicit YYYY-MM-DD mentioned in the transcript content, (2) the filename-hint or creation-time fallback the caller supplies in the user message if no explicit date is in the content. Always return YYYY-MM-DD.
@@ -96,6 +99,33 @@ ${indexBlock}
 Describe what's visible and enrich based on it, per the image-handling instructions above.`;
 }
 
+// Same context as enrichImageUserMessage, for a PDF attached as a document
+// content block instead of inlined text.
+export function enrichDocumentUserMessage(
+	filenameDateHint: string | null,
+	creationDateFallback: string,
+	existingNotes: NoteIndexEntry[]
+): string {
+	const indexBlock =
+		existingNotes.length > 0
+			? existingNotes
+					.map(
+						(n) =>
+							`- "${n.title}" (${n.date}, project: ${n.project}, tags: [${n.tags.join(", ")}]): ${n.snippet}`
+					)
+					.join("\n")
+			: "(no existing notes yet)";
+
+	return `Filename date hint (may be absent): ${filenameDateHint ?? "none"}
+File creation time fallback if no date is found elsewhere: ${creationDateFallback}
+
+## Existing notes index (for duplicate check and related-note linking)
+${indexBlock}
+
+## Captured document
+Read the attached PDF and enrich based on its actual content, per the document-handling instructions above.`;
+}
+
 export const ENRICH_TOOL = {
 	name: "enrich_note",
 	description: "Return the structured enrichment for a captured note.",
@@ -111,7 +141,7 @@ export const ENRICH_TOOL = {
 				items: { type: "string" },
 				description: "Empty array for type: note",
 			},
-			source: { type: "string", enum: ["handy", "pasted", "photo"] },
+			source: { type: "string", enum: ["handy", "pasted", "photo", "document"] },
 			project: { type: "string" },
 			tags: { type: "array", items: { type: "string" } },
 			new_tag: {

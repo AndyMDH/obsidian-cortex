@@ -1,6 +1,7 @@
 import {
 	App,
 	FileSystemAdapter,
+	Modal,
 	Notice,
 	Platform,
 	Plugin,
@@ -10,6 +11,9 @@ import {
 	requestUrl,
 } from "obsidian";
 import { execFile } from "child_process";
+import { promises as fsPromises } from "fs";
+import * as os from "os";
+import * as path from "path";
 import type { ApiProvider, CortexSettings, EnrichResult, NoteIndexEntry, WikiSynthesisResult } from "./src/types";
 import { DEFAULT_SETTINGS } from "./src/types";
 import { AnthropicProvider } from "./src/anthropic";
@@ -20,6 +24,7 @@ import { GeminiProvider } from "./src/gemini";
 import {
 	ENRICH_TOOL,
 	WIKI_TOOL,
+	enrichDocumentUserMessage,
 	enrichImageUserMessage,
 	enrichSystemPrompt,
 	enrichUserMessage,
@@ -27,9 +32,9 @@ import {
 	wikiUserMessage,
 } from "./src/prompts";
 import * as logic from "./src/logic";
-import { augmentedPath, buildEnrichArgs, buildWikiArgs, summarizeLogLines } from "./src/cliRunner";
+import { augmentedPath, buildEnrichArgs, buildQueryArgs, buildWikiArgs, summarizeLogLines } from "./src/cliRunner";
 import type { CliExec } from "./src/cliRunner";
-import { meetingEnricherSkill, wikiBuilderSkill } from "./src/skillTemplates";
+import { meetingEnricherSkill, vaultQuerySkill, wikiBuilderSkill } from "./src/skillTemplates";
 import type { SkillFolders } from "./src/skillTemplates";
 
 const LOG_FOLDER = ".cortex";
@@ -58,6 +63,12 @@ export default class CortexPlugin extends Plugin {
 			id: "build-wikis",
 			name: "Build/update wikis now",
 			callback: () => void this.buildWikis(),
+		});
+
+		this.addCommand({
+			id: "query-vault",
+			name: "Query vault",
+			callback: () => new QueryModal(this.app, (question) => void this.runVaultQuery(question)).open(),
 		});
 
 		if (this.settings.autoProcessOnCreate) {
@@ -163,6 +174,7 @@ export default class CortexPlugin extends Plugin {
 			meetingEnricherSkill(folders)
 		);
 		await this.writeSkillIfMissing(".claude/skills/wiki-builder/SKILL.md", wikiBuilderSkill(folders));
+		await this.writeSkillIfMissing(".claude/skills/vault-query/SKILL.md", vaultQuerySkill(folders));
 	}
 
 	private async writeSkillIfMissing(path: string, content: string) {
@@ -403,10 +415,76 @@ export default class CortexPlugin extends Plugin {
 		new Notice(parts.length > 0 ? `Cortex: ${parts.join(", ")}.` : "Cortex: no wikis to build or update.");
 	}
 
+	async runVaultQuery(question: string) {
+		if (this.settings.executionMode !== "cli") {
+			new Notice("Cortex: vault query needs CLI execution mode (it's an open-ended search, not a fixed-schema call) - switch modes in plugin settings.", 10000);
+			return;
+		}
+		if (!Platform.isDesktopApp) {
+			new Notice("Cortex: CLI execution mode only works on desktop.", 10000);
+			return;
+		}
+		const basePath = this.getVaultBasePath();
+		if (!basePath) {
+			new Notice("Cortex: could not resolve this vault's filesystem path.", 10000);
+			return;
+		}
+		await this.ensureSkillsInstalled();
+		new Notice("Cortex: searching vault...");
+		const result = await this.cliExec(
+			this.settings.claudeCliPath,
+			buildQueryArgs(question),
+			{ cwd: basePath, env: this.cliEnv() }
+		);
+		if (result.code !== 0) {
+			await this.appendLog(`ERROR: vault-query CLI exited ${result.code} - ${result.stderr.slice(0, 300)}`);
+			new Notice("Cortex: query failed - see .cortex/pipeline.log", 10000);
+			return;
+		}
+
+		const stamp = window.moment().format("YYYY-MM-DD HHmmss");
+		const slug = logic.sanitizeFilename(question).slice(0, 60);
+		const path = `${this.settings.queriesFolder}/${stamp} ${slug}.md`;
+		await this.ensureFolderExists(this.settings.queriesFolder);
+		const content = `---\ntype: query\nasked: ${window.moment().toISOString(true)}\n---\n# ${question}\n\n${result.stdout.trim()}\n`;
+		await this.app.vault.create(path, content);
+		const file = this.app.vault.getFileByPath(path);
+		if (file) await this.app.workspace.getLeaf(true).openFile(file);
+	}
+
 	private mimeTypeForExtension(extension: string): string {
 		const ext = extension.toLowerCase();
+		if (ext === "pdf") return "application/pdf";
 		if (ext === "jpg" || ext === "jpeg") return "image/jpeg";
 		return `image/${ext}`;
+	}
+
+	// Obsidian's Electron/Chromium preview has no native HEIC decoder, and
+	// Anthropic/OpenAI's vision APIs reject it outright - so HEIC/HEIF always
+	// gets converted to JPEG before storage or any provider call, via macOS's
+	// built-in `sips` tool (desktop only; no bundled equivalent for
+	// Windows/Linux, and no shell access at all on mobile).
+	private async convertHeicToJpeg(binary: ArrayBuffer): Promise<ArrayBuffer> {
+		const stamp = Date.now();
+		const inPath = path.join(os.tmpdir(), `cortex-heic-${stamp}.heic`);
+		const outPath = path.join(os.tmpdir(), `cortex-heic-${stamp}.jpg`);
+		try {
+			await fsPromises.writeFile(inPath, Buffer.from(binary));
+			await new Promise<void>((resolve, reject) => {
+				execFile("sips", ["-s", "format", "jpeg", inPath, "--out", outPath], (error) => {
+					if (error) reject(error);
+					else resolve();
+				});
+			});
+			const converted = await fsPromises.readFile(outPath);
+			return converted.buffer.slice(
+				converted.byteOffset,
+				converted.byteOffset + converted.byteLength
+			) as ArrayBuffer;
+		} finally {
+			await fsPromises.unlink(inPath).catch(() => {});
+			await fsPromises.unlink(outPath).catch(() => {});
+		}
 	}
 
 	async processFile(file: TFile): Promise<boolean> {
@@ -417,14 +495,54 @@ export default class CortexPlugin extends Plugin {
 		}
 		this.inFlight.add(file.path);
 		try {
-			const isImage = logic.IMAGE_EXTENSIONS.includes(file.extension.toLowerCase());
+			const ext = file.extension.toLowerCase();
+			const isHeic = logic.HEIC_EXTENSIONS.includes(ext);
+			const isImage = isHeic || logic.IMAGE_EXTENSIONS.includes(ext);
+			const isPdf = logic.PDF_EXTENSIONS.includes(ext);
 			let raw = "";
-			let image: { mediaType: string; base64Data: string } | undefined;
+			let attachment: { kind: "image" | "document"; mediaType: string; base64Data: string } | undefined;
+			let convertedBinary: ArrayBuffer | undefined;
+			let effectiveExtension = file.extension;
+
 			if (isImage) {
+				let binary = await this.app.vault.readBinary(file);
+				if (binary.byteLength === 0) return false;
+
+				if (isHeic) {
+					if (!Platform.isDesktopApp) {
+						new Notice(
+							`Cortex: HEIC capture needs desktop (uses macOS's sips tool) - "${file.name}" left in inbox.`,
+							10000
+						);
+						return false;
+					}
+					try {
+						binary = await this.convertHeicToJpeg(binary);
+					} catch (e) {
+						const msg = e instanceof Error ? e.message : String(e);
+						new Notice(
+							`Cortex: HEIC conversion failed for "${file.name}" (needs macOS's sips tool) - see .cortex/pipeline.log`,
+							10000
+						);
+						await this.appendLog(`ERROR: ${file.name} - HEIC conversion failed: ${msg}`);
+						return false;
+					}
+					effectiveExtension = "jpg";
+					convertedBinary = binary;
+				}
+
+				attachment = {
+					kind: "image",
+					mediaType: this.mimeTypeForExtension(effectiveExtension),
+					base64Data: logic.arrayBufferToBase64(binary),
+				};
+			} else if (isPdf) {
 				const binary = await this.app.vault.readBinary(file);
 				if (binary.byteLength === 0) return false;
-				image = {
-					mediaType: this.mimeTypeForExtension(file.extension),
+
+				attachment = {
+					kind: "document",
+					mediaType: this.mimeTypeForExtension(ext),
 					base64Data: logic.arrayBufferToBase64(binary),
 				};
 			} else {
@@ -437,9 +555,11 @@ export default class CortexPlugin extends Plugin {
 			const dateHint = logic.extractFilenameDateHint(file.name);
 			const ctime = new Date(file.stat.ctime).toISOString().slice(0, 10);
 
-			const message = image
-				? { text: enrichImageUserMessage(dateHint, ctime, existingIndex), image }
-				: { text: enrichUserMessage(raw, dateHint, ctime, existingIndex) };
+			const message = !attachment
+				? { text: enrichUserMessage(raw, dateHint, ctime, existingIndex) }
+				: attachment.kind === "document"
+					? { text: enrichDocumentUserMessage(dateHint, ctime, existingIndex), attachment }
+					: { text: enrichImageUserMessage(dateHint, ctime, existingIndex), attachment };
 
 			const result = await this.getLlmProvider().callTool<EnrichResult>(
 				enrichSystemPrompt(tagRegistry),
@@ -467,11 +587,24 @@ export default class CortexPlugin extends Plugin {
 			const finalFilename = logic.meetingFilename(result.date, result.title);
 			const destPath = `${this.settings.meetingsFolder}/${finalFilename}`;
 
-			if (isImage) {
-				const imageFilename = logic.meetingImageFilename(result.date, result.title, file.extension);
-				const markdown = logic.buildMeetingMarkdown(result, "", enrichedAt, existingWikiLink, imageFilename);
+			if (isImage || isPdf) {
+				const attachmentFilename = logic.meetingAttachmentFilename(result.date, result.title, effectiveExtension);
+				const markdown = logic.buildMeetingMarkdown(result, "", enrichedAt, existingWikiLink, {
+					filename: attachmentFilename,
+					kind: isPdf ? "document" : "image",
+				});
 				await this.app.vault.create(destPath, markdown);
-				await this.app.fileManager.renameFile(file, `${this.settings.meetingsFolder}/${imageFilename}`);
+				if (convertedBinary) {
+					// Bytes changed (HEIC -> JPEG), so this is a new file, not a
+					// rename - write the converted image, then drop the original.
+					await this.app.vault.createBinary(
+						`${this.settings.meetingsFolder}/${attachmentFilename}`,
+						convertedBinary
+					);
+					await this.app.vault.delete(file);
+				} else {
+					await this.app.fileManager.renameFile(file, `${this.settings.meetingsFolder}/${attachmentFilename}`);
+				}
 			} else {
 				const markdown = logic.buildMeetingMarkdown(result, raw, enrichedAt, existingWikiLink);
 				await this.app.vault.create(destPath, markdown);
@@ -842,5 +975,44 @@ class CortexSettingTab extends PluginSettingTab {
 		folderSetting("meetingsFolder", "Meetings folder");
 		folderSetting("wikisFolder", "Wikis folder");
 		folderSetting("tagsFolder", "Tags folder");
+		folderSetting("queriesFolder", "Queries folder");
+	}
+}
+
+class QueryModal extends Modal {
+	private question = "";
+
+	constructor(app: App, private onSubmit: (question: string) => void) {
+		super(app);
+	}
+
+	onOpen() {
+		this.setTitle("Query vault");
+		const input = this.contentEl.createEl("textarea", {
+			attr: { rows: "3", placeholder: "What do you want to know?" },
+		});
+		input.style.width = "100%";
+		input.addEventListener("keydown", (e) => {
+			if (e.key === "Enter" && !e.shiftKey) {
+				e.preventDefault();
+				submit();
+			}
+		});
+		input.addEventListener("input", () => {
+			this.question = input.value;
+		});
+		const submit = () => {
+			if (!this.question.trim()) return;
+			this.close();
+			this.onSubmit(this.question.trim());
+		};
+		new Setting(this.contentEl).addButton((btn) =>
+			btn.setButtonText("Ask").setCta().onClick(submit)
+		);
+		input.focus();
+	}
+
+	onClose() {
+		this.contentEl.empty();
 	}
 }

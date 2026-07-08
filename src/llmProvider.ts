@@ -22,16 +22,17 @@ export class LlmApiError extends Error {
 	}
 }
 
-export interface ImageInput {
-	mediaType: string; // e.g. "image/png"
+export interface AttachmentInput {
+	kind: "image" | "document"; // "document" is currently PDF-only
+	mediaType: string; // e.g. "image/png" or "application/pdf"
 	base64Data: string;
 }
 
 // Bundled rather than two positional params so a caller wanting maxTokens
-// without an image doesn't have to write callTool(sys, msg, tool, undefined, 8192).
+// without an attachment doesn't have to write callTool(sys, msg, tool, undefined, 8192).
 export interface LlmMessage {
 	text: string;
-	image?: ImageInput;
+	attachment?: AttachmentInput;
 }
 
 export interface LlmProvider {

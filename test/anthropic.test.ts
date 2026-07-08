@@ -78,13 +78,37 @@ test("callClaudeTool puts the image block before the text block when an image is
 		"key",
 		"model",
 		"sys",
-		{ text: "describe this", image: { mediaType: "image/png", base64Data: "abc123" } },
+		{ text: "describe this", attachment: { kind: "image", mediaType: "image/png", base64Data: "abc123" } },
 		TOOL
 	);
 	const parsedBody = JSON.parse(capturedBody);
 	assert.deepEqual(parsedBody.messages[0].content, [
 		{ type: "image", source: { type: "base64", media_type: "image/png", data: "abc123" } },
 		{ type: "text", text: "describe this" },
+	]);
+});
+
+test("callClaudeTool sends a document block (not image) when a PDF attachment is given", async () => {
+	let capturedBody = "";
+	const mockPost: HttpPost = async (_url, _headers, body) => {
+		capturedBody = body;
+		return {
+			status: 200,
+			text: JSON.stringify({ content: [{ type: "tool_use", name: "test_tool", input: {} }] }),
+		};
+	};
+	await callClaudeTool(
+		mockPost,
+		"key",
+		"model",
+		"sys",
+		{ text: "summarize this", attachment: { kind: "document", mediaType: "application/pdf", base64Data: "abc123" } },
+		TOOL
+	);
+	const parsedBody = JSON.parse(capturedBody);
+	assert.deepEqual(parsedBody.messages[0].content, [
+		{ type: "document", source: { type: "base64", media_type: "application/pdf", data: "abc123" } },
+		{ type: "text", text: "summarize this" },
 	]);
 });
 

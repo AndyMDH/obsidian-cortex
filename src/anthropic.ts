@@ -49,16 +49,18 @@ export async function callClaudeTool<T>(
 		);
 	}
 
-	// Image block before text - Anthropic's own recommended order for a
-	// single image, for better attention/quality on the accompanying prompt.
-	const content = message.image
+	// Attachment block before text - Anthropic's own recommended order for a
+	// single image/document, for better attention/quality on the accompanying
+	// prompt. "document" is Claude's native PDF content block (no image
+	// conversion or OCR step needed - it reads the PDF directly).
+	const content = message.attachment
 		? [
 				{
-					type: "image",
+					type: message.attachment.kind === "document" ? "document" : "image",
 					source: {
 						type: "base64",
-						media_type: message.image.mediaType,
-						data: message.image.base64Data,
+						media_type: message.attachment.mediaType,
+						data: message.attachment.base64Data,
 					},
 				},
 				{ type: "text", text: message.text },

@@ -15,7 +15,7 @@ import {
 	buildWikiMarkdown,
 	clusterByTag,
 	isCaptureFile,
-	meetingImageFilename,
+	meetingAttachmentFilename,
 	arrayBufferToBase64,
 } from "../src/logic.ts";
 import type { EnrichResult, WikiSynthesisResult } from "../src/types.ts";
@@ -192,22 +192,28 @@ test("buildWikiMarkdown shows a placeholder when there are no open questions", (
 	assert.ok(md.includes("(none currently)"));
 });
 
-test("isCaptureFile accepts md/txt/images and rejects everything else", () => {
+test("isCaptureFile accepts md/txt/images/pdf and rejects everything else", () => {
 	assert.ok(isCaptureFile("md"));
 	assert.ok(isCaptureFile("txt"));
 	assert.ok(isCaptureFile("png"));
 	assert.ok(isCaptureFile("JPG")); // case-insensitive
 	assert.ok(isCaptureFile("jpeg"));
 	assert.ok(isCaptureFile("webp"));
-	assert.ok(!isCaptureFile("heic"));
+	assert.ok(isCaptureFile("heic"));
+	assert.ok(isCaptureFile("HEIF")); // case-insensitive
+	assert.ok(isCaptureFile("pdf"));
+	assert.ok(isCaptureFile("PDF")); // case-insensitive
 	assert.ok(!isCaptureFile("gif"));
-	assert.ok(!isCaptureFile("pdf"));
 });
 
-test("meetingImageFilename combines date, sanitized title, and the original extension", () => {
+test("meetingAttachmentFilename combines date, sanitized title, and the original extension", () => {
 	assert.equal(
-		meetingImageFilename("2026-07-06", "Whiteboard: Sketch", "png"),
+		meetingAttachmentFilename("2026-07-06", "Whiteboard: Sketch", "png"),
 		"2026-07-06 Whiteboard- Sketch.png"
+	);
+	assert.equal(
+		meetingAttachmentFilename("2026-07-06", "Q2 Report", "pdf"),
+		"2026-07-06 Q2 Report.pdf"
 	);
 });
 
@@ -224,16 +230,29 @@ test("arrayBufferToBase64 handles buffers larger than one chunk", () => {
 	assert.equal(atob(encoded).length, bytes.length);
 });
 
-test("buildMeetingMarkdown embeds the image and omits Transcript when capturedImageFilename is set", () => {
+test("buildMeetingMarkdown embeds the image and omits Transcript when capturedAttachment is an image", () => {
 	const md = buildMeetingMarkdown(
 		baseResult({ source: "photo" }),
 		"",
 		"2026-07-06T12:00:00.000Z",
 		null,
-		"2026-07-06 Whiteboard Sketch.png"
+		{ filename: "2026-07-06 Whiteboard Sketch.png", kind: "image" }
 	);
 	assert.ok(md.includes("## Captured image"));
 	assert.ok(md.includes("![[2026-07-06 Whiteboard Sketch.png]]"));
+	assert.ok(!md.includes("## Transcript"));
+});
+
+test("buildMeetingMarkdown embeds the document and omits Transcript when capturedAttachment is a document", () => {
+	const md = buildMeetingMarkdown(
+		baseResult({ source: "document" }),
+		"",
+		"2026-07-06T12:00:00.000Z",
+		null,
+		{ filename: "2026-07-06 Q2 Report.pdf", kind: "document" }
+	);
+	assert.ok(md.includes("## Captured document"));
+	assert.ok(md.includes("![[2026-07-06 Q2 Report.pdf]]"));
 	assert.ok(!md.includes("## Transcript"));
 });
 

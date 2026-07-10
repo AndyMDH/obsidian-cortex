@@ -1369,6 +1369,8 @@ class OnboardingModal extends Modal {
 class QuickCaptureModal extends Modal {
 	private text = "";
 	private attachedFile: File | null = null;
+	private recorder: MediaRecorder | null = null;
+	private recordStream: MediaStream | null = null;
 
 	constructor(app: App, private plugin: CortexPlugin) {
 		super(app);
@@ -1401,16 +1403,64 @@ class QuickCaptureModal extends Modal {
 		});
 
 		const submit = async () => {
+			if (this.recorder?.state === "recording") this.stopRecording();
 			if (!this.text.trim() && !this.attachedFile) return;
 			this.close();
 			await this.plugin.quickCapture(this.text, this.attachedFile);
 		};
 
 		new Setting(this.contentEl)
-			.addButton((b) => b.setButtonText("Attach image / PDF / audio").onClick(() => picker.click()))
+			.addButton((b) => {
+				b.setButtonText("🎙️ Record").onClick(async () => {
+					if (this.recorder?.state === "recording") {
+						this.stopRecording();
+						b.setButtonText("🎙️ Record");
+						return;
+					}
+					try {
+						await this.startRecording((file) => {
+							this.attachedFile = file;
+							fileLabel.setText(`Attached: ${file.name} - hit Capture to save`);
+						});
+						b.setButtonText("⏹ Stop");
+						fileLabel.setText("Recording… talk, then hit Stop.");
+					} catch {
+						new Notice("Cortex: microphone access was denied - allow it in system settings and try again.", 8000);
+					}
+				});
+			})
+			.addButton((b) => b.setButtonText("Attach file").onClick(() => picker.click()))
 			.addButton((b) => b.setButtonText("Capture").setCta().onClick(() => void submit()));
 
 		input.focus();
+	}
+
+	private async startRecording(onDone: (file: File) => void) {
+		this.recordStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		const recorder = new MediaRecorder(this.recordStream);
+		const chunks: Blob[] = [];
+		recorder.ondataavailable = (e) => {
+			if (e.data.size > 0) chunks.push(e.data);
+		};
+		recorder.onstop = () => {
+			const mime = recorder.mimeType || "audio/webm";
+			const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
+			onDone(new File(chunks, `Voice note.${ext}`, { type: mime }));
+			this.recordStream?.getTracks().forEach((t) => t.stop());
+			this.recordStream = null;
+		};
+		recorder.start();
+		this.recorder = recorder;
+	}
+
+	private stopRecording() {
+		this.recorder?.stop();
+		this.recorder = null;
+	}
+
+	onClose() {
+		if (this.recorder?.state === "recording") this.stopRecording();
+		this.recordStream?.getTracks().forEach((t) => t.stop());
 	}
 }
 

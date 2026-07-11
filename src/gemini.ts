@@ -16,7 +16,7 @@ export class GeminiProvider implements LlmProvider {
 
 	async callTool<T>(system: string, message: LlmMessage, tool: LlmTool, maxTokens = 4096): Promise<T> {
 		if (!this.apiKey) {
-			throw new Error("No Gemini API key configured. Set one in Noggin plugin settings.");
+			throw new Error("No Gemini API key configured. Set one in Nous plugin settings.");
 		}
 
 		// inline_data handles images and PDFs alike - no per-kind branching.

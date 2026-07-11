@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Auto-capture Mac screenshots into Noggin's inbox.
+  Auto-capture Mac screenshots into Nous's inbox.
 
   1. Copy screenshot-capture.sh somewhere permanent, edit its variables,
      and `chmod +x` it.

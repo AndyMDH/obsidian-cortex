@@ -14,10 +14,10 @@
   <text x="30" y="162" font-size="13.5" fill="#57606a">Community plugins</text>
   <text x="30" y="196" font-size="12" font-weight="700" fill="#57606a">COMMUNITY PLUGINS</text>
   <rect x="20" y="208" width="200" height="30" rx="6" fill="#8250df"/>
-  <text x="30" y="228" font-size="13.5" font-weight="600" fill="#ffffff">Noggin</text>
+  <text x="30" y="228" font-size="13.5" font-weight="600" fill="#ffffff">Nous</text>
 
   <!-- main pane -->
-  <text x="260" y="90" font-size="16" font-weight="700" fill="#1f2328">Noggin</text>
+  <text x="260" y="90" font-size="16" font-weight="700" fill="#1f2328">Nous</text>
 
   <text x="260" y="126" font-size="13.5" font-weight="600" fill="#1f2328">Execution mode</text>
   <rect x="620" y="108" width="230" height="28" rx="6" fill="#ffffff" stroke="#d0d7de"/>

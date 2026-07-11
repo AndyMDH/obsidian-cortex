@@ -14,7 +14,7 @@ import { execFile } from "child_process";
 import { promises as fsPromises } from "fs";
 import * as os from "os";
 import * as path from "path";
-import type { ApiProvider, NogginSettings, EnrichResult, NoteIndexEntry, WikiSynthesisResult } from "./src/types";
+import type { ApiProvider, NousSettings, EnrichResult, NoteIndexEntry, WikiSynthesisResult } from "./src/types";
 import { DEFAULT_SETTINGS, MODEL_OPTIONS } from "./src/types";
 import { AnthropicProvider } from "./src/anthropic";
 import type { HttpPost } from "./src/anthropic";
@@ -43,11 +43,11 @@ import type { CliExec } from "./src/cliRunner";
 import { meetingEnricherSkill, vaultQuerySkill, wikiBuilderSkill } from "./src/skillTemplates";
 import type { SkillFolders } from "./src/skillTemplates";
 
-const LOG_FOLDER = ".noggin";
+const LOG_FOLDER = ".nous";
 const LOG_FILE = `${LOG_FOLDER}/pipeline.log`;
 
-export default class NogginPlugin extends Plugin {
-	settings: NogginSettings;
+export default class NousPlugin extends Plugin {
+	settings: NousSettings;
 	private inFlight = new Set<string>();
 	private cliRunInProgress = false;
 	private voiceRecorder: MediaRecorder | null = null;
@@ -55,7 +55,7 @@ export default class NogginPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new NogginSettingTab(this.app, this));
+		this.addSettingTab(new NousSettingTab(this.app, this));
 
 		this.addCommand({
 			id: "process-inbox",
@@ -81,11 +81,11 @@ export default class NogginPlugin extends Plugin {
 			callback: () => new QuickCaptureModal(this.app, this).open(),
 		});
 
-		this.addRibbonIcon("plus-circle", "Noggin quick capture", () => {
+		this.addRibbonIcon("plus-circle", "Nous quick capture", () => {
 			new QuickCaptureModal(this.app, this).open();
 		});
 
-		this.addRibbonIcon("mic", "Noggin: toggle voice capture", () => {
+		this.addRibbonIcon("mic", "Nous: toggle voice capture", () => {
 			void this.toggleVoiceCapture();
 		});
 
@@ -108,7 +108,7 @@ export default class NogginPlugin extends Plugin {
 				callback: () => void this.toggleMeetingCapture(),
 			});
 
-			this.addRibbonIcon("phone-call", "Noggin: toggle meeting capture", () => {
+			this.addRibbonIcon("phone-call", "Nous: toggle meeting capture", () => {
 				void this.toggleMeetingCapture();
 			});
 		}
@@ -136,7 +136,7 @@ export default class NogginPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const data = (await this.loadData()) as Partial<NogginSettings> | null;
+		const data = (await this.loadData()) as Partial<NousSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 		// Installs that predate the wizard already have settings on disk -
 		// don't greet a configured vault with a first-run welcome.
@@ -177,7 +177,7 @@ export default class NogginPlugin extends Plugin {
 			return transcribeWithOpenAi(this.httpPostBinary, keys.openai, mediaType, new Uint8Array(binary), filename);
 		}
 		throw new Error(
-			"Audio capture needs local whisper-cli (Settings → Noggin → Local voice transcription) or a Gemini/OpenAI API key. A key is only used to turn speech into text - enrichment still runs in your chosen mode."
+			"Audio capture needs local whisper-cli (Settings → Nous → Local voice transcription) or a Gemini/OpenAI API key. A key is only used to turn speech into text - enrichment still runs in your chosen mode."
 		);
 	}
 
@@ -202,12 +202,12 @@ export default class NogginPlugin extends Plugin {
 		if (!Platform.isMacOS) return null; // afconvert is macOS-only
 
 		const modelPath = this.settings.whisperModelPath.trim() || this.defaultWhisperModelPath();
-		if (!(await NogginPlugin.fileExists(modelPath))) return null;
+		if (!(await NousPlugin.fileExists(modelPath))) return null;
 
 		const stamp = `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
-		const rawPath = path.join(os.tmpdir(), `noggin-voice-${stamp}.${extension}`);
-		const wavPath = path.join(os.tmpdir(), `noggin-voice-${stamp}.wav`);
-		const outBase = path.join(os.tmpdir(), `noggin-voice-${stamp}`);
+		const rawPath = path.join(os.tmpdir(), `nous-voice-${stamp}.${extension}`);
+		const wavPath = path.join(os.tmpdir(), `nous-voice-${stamp}.wav`);
+		const outBase = path.join(os.tmpdir(), `nous-voice-${stamp}`);
 		const cleanupPaths = [rawPath, wavPath, `${outBase}.json`];
 		try {
 			await fsPromises.writeFile(rawPath, Buffer.from(binary));
@@ -222,7 +222,7 @@ export default class NogginPlugin extends Plugin {
 			const whisperCli = this.settings.whisperCliPath.trim() || "whisper-cli";
 			const vadModelPath = this.defaultWhisperVadModelPath();
 			const args = ["-m", modelPath, "-f", wavPath, "-l", "auto", "-oj", "-of", outBase];
-			if (await NogginPlugin.fileExists(vadModelPath)) {
+			if (await NousPlugin.fileExists(vadModelPath)) {
 				args.push("--vad", "--vad-model", vadModelPath);
 			}
 
@@ -451,7 +451,7 @@ export default class NogginPlugin extends Plugin {
 			path,
 			"Quick thought after today's kickoff with the new client: they want the reporting dashboard live before the end of next quarter, but their data quality is a mess - half the customer records are missing regions. Maria offered to run a cleanup sprint first. I should sketch the dashboard wireframe this week and check whether we can reuse the ETL setup from the last project.\n"
 		);
-		new Notice("Noggin: sample note dropped in the inbox - watch it get enriched.");
+		new Notice("Nous: sample note dropped in the inbox - watch it get enriched.");
 	}
 
 	// Hands-free voice capture: one command toggles recording, no UI. The
@@ -465,7 +465,7 @@ export default class NogginPlugin extends Plugin {
 		try {
 			this.voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		} catch {
-			new Notice("Noggin: microphone access denied - allow it for Obsidian in system settings.", 8000);
+			new Notice("Nous: microphone access denied - allow it for Obsidian in system settings.", 8000);
 			return;
 		}
 		const recorder = new MediaRecorder(this.voiceStream);
@@ -487,13 +487,13 @@ export default class NogginPlugin extends Plugin {
 					`${this.settings.inboxFolder}/${stamp} Voice note.${ext}`,
 					buffer
 				);
-				new Notice("Noggin: voice note captured.");
+				new Notice("Nous: voice note captured.");
 				if (!this.settings.autoProcessOnCreate) void this.processInbox();
 			})();
 		};
 		recorder.start();
 		this.voiceRecorder = recorder;
-		new Notice("Noggin: recording - press the hotkey again to stop.");
+		new Notice("Nous: recording - press the hotkey again to stop.");
 	}
 
 	// One button for full meeting capture (both sides of a call). Obsidian's
@@ -511,7 +511,7 @@ export default class NogginPlugin extends Plugin {
 	// in the vault inbox on its own, same as today.
 	async toggleMeetingCapture() {
 		if (!Platform.isMacOS) {
-			new Notice("Noggin: meeting capture needs QuickRecorder, macOS only.");
+			new Notice("Nous: meeting capture needs QuickRecorder, macOS only.");
 			return;
 		}
 		const wasRecording = await this.isQuickRecorderRecording();
@@ -519,7 +519,7 @@ export default class NogginPlugin extends Plugin {
 			await this.runAppleScript('tell application "QuickRecorder" to record system audio with microphone');
 		} catch {
 			new Notice(
-				"Noggin: couldn't reach QuickRecorder - the first time this runs, macOS may ask to let Obsidian control it. Approve that, then try again.",
+				"Nous: couldn't reach QuickRecorder - the first time this runs, macOS may ask to let Obsidian control it. Approve that, then try again.",
 				10000
 			);
 			return;
@@ -532,7 +532,7 @@ export default class NogginPlugin extends Plugin {
 				() => {}
 			);
 		}, 800);
-		new Notice(wasRecording ? "Noggin: meeting recording stopped." : "Noggin: meeting recording started.");
+		new Notice(wasRecording ? "Nous: meeting recording stopped." : "Nous: meeting recording started.");
 	}
 
 	private runAppleScript(script: string): Promise<void> {
@@ -583,7 +583,7 @@ export default class NogginPlugin extends Plugin {
 		if (text.trim()) {
 			await this.app.vault.create(`${this.settings.inboxFolder}/${stamp}.md`, text.trim() + "\n");
 		}
-		new Notice("Noggin: captured to inbox.");
+		new Notice("Nous: captured to inbox.");
 		if (!this.settings.autoProcessOnCreate) void this.processInbox();
 	}
 
@@ -628,26 +628,26 @@ export default class NogginPlugin extends Plugin {
 				if (await this.processFile(file)) enriched++;
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				new Notice(`Noggin: failed on "${file.name}" - ${msg}`, 10000);
+				new Notice(`Nous: failed on "${file.name}" - ${msg}`, 10000);
 				await this.appendLog(`ERROR: ${file.name} - ${msg}`);
 			}
 		}
 
 		if (enriched > 0) {
-			new Notice(`Noggin: ${enriched} note${enriched === 1 ? "" : "s"} enriched.`);
+			new Notice(`Nous: ${enriched} note${enriched === 1 ? "" : "s"} enriched.`);
 			await this.buildWikisViaApi();
 		}
 	}
 
 	private async processInboxViaCli() {
 		if (!Platform.isDesktopApp) {
-			new Notice("Noggin: CLI execution mode only works on desktop.", 10000);
+			new Notice("Nous: CLI execution mode only works on desktop.", 10000);
 			return;
 		}
 		if (this.cliRunInProgress) return;
 		const basePath = this.getVaultBasePath();
 		if (!basePath) {
-			new Notice("Noggin: could not resolve this vault's filesystem path.", 10000);
+			new Notice("Nous: could not resolve this vault's filesystem path.", 10000);
 			return;
 		}
 
@@ -688,7 +688,7 @@ export default class NogginPlugin extends Plugin {
 				await this.appendLog(`TRANSCRIBED: ${file.name} -> ${notePath}`);
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				new Notice(`Noggin: could not transcribe "${file.name}" - ${msg}`, 10000);
+				new Notice(`Nous: could not transcribe "${file.name}" - ${msg}`, 10000);
 				await this.appendLog(`ERROR: ${file.name} - transcription failed: ${msg}`);
 			}
 		}
@@ -710,7 +710,7 @@ export default class NogginPlugin extends Plugin {
 				`ERROR: meeting-enricher CLI exited ${enrichResult.code} - ${enrichResult.stderr.slice(0, 300)}`
 			);
 			new Notice(
-				`Noggin: enrichment failed (is "${this.settings.claudeCliPath}" the right CLI path?) - see .noggin/pipeline.log`,
+				`Nous: enrichment failed (is "${this.settings.claudeCliPath}" the right CLI path?) - see .nous/pipeline.log`,
 				10000
 			);
 			return;
@@ -725,7 +725,7 @@ export default class NogginPlugin extends Plugin {
 			await this.appendLog(
 				`ERROR: wiki-builder CLI exited ${wikiResult.code} - ${wikiResult.stderr.slice(0, 300)}`
 			);
-			new Notice("Noggin: wiki step failed - see .noggin/pipeline.log", 10000);
+			new Notice("Nous: wiki step failed - see .nous/pipeline.log", 10000);
 			return;
 		}
 
@@ -735,21 +735,21 @@ export default class NogginPlugin extends Plugin {
 			if (summary.newWikis > 0) parts.push(`${summary.newWikis} new wiki${summary.newWikis === 1 ? "" : "s"}`);
 			if (summary.updatedWikis > 0)
 				parts.push(`${summary.updatedWikis} wiki${summary.updatedWikis === 1 ? "" : "s"} updated`);
-			new Notice(`Noggin: ${parts.join(", ")}.`);
+			new Notice(`Nous: ${parts.join(", ")}.`);
 		}
 		if (summary.problems > 0) {
-			new Notice(`Noggin: ${summary.problems} item(s) skipped or errored - see .noggin/pipeline.log`, 8000);
+			new Notice(`Nous: ${summary.problems} item(s) skipped or errored - see .nous/pipeline.log`, 8000);
 		}
 	}
 
 	private async runWikiBuilderCli() {
 		if (!Platform.isDesktopApp) {
-			new Notice("Noggin: CLI execution mode only works on desktop.", 10000);
+			new Notice("Nous: CLI execution mode only works on desktop.", 10000);
 			return;
 		}
 		const basePath = this.getVaultBasePath();
 		if (!basePath) {
-			new Notice("Noggin: could not resolve this vault's filesystem path.", 10000);
+			new Notice("Nous: could not resolve this vault's filesystem path.", 10000);
 			return;
 		}
 		await this.ensureSkillsInstalled();
@@ -761,7 +761,7 @@ export default class NogginPlugin extends Plugin {
 		);
 		if (result.code !== 0) {
 			await this.appendLog(`ERROR: wiki-builder CLI exited ${result.code} - ${result.stderr.slice(0, 300)}`);
-			new Notice("Noggin: wiki step failed - see .noggin/pipeline.log", 10000);
+			new Notice("Nous: wiki step failed - see .nous/pipeline.log", 10000);
 			return;
 		}
 		const summary = summarizeLogLines(await this.readLogSince(before));
@@ -769,25 +769,25 @@ export default class NogginPlugin extends Plugin {
 		if (summary.newWikis > 0) parts.push(`${summary.newWikis} new wiki${summary.newWikis === 1 ? "" : "s"}`);
 		if (summary.updatedWikis > 0)
 			parts.push(`${summary.updatedWikis} wiki${summary.updatedWikis === 1 ? "" : "s"} updated`);
-		new Notice(parts.length > 0 ? `Noggin: ${parts.join(", ")}.` : "Noggin: no wikis to build or update.");
+		new Notice(parts.length > 0 ? `Nous: ${parts.join(", ")}.` : "Nous: no wikis to build or update.");
 	}
 
 	async runVaultQuery(question: string) {
 		if (this.settings.executionMode !== "cli") {
-			new Notice("Noggin: vault query needs CLI execution mode (it's an open-ended search, not a fixed-schema call) - switch modes in plugin settings.", 10000);
+			new Notice("Nous: vault query needs CLI execution mode (it's an open-ended search, not a fixed-schema call) - switch modes in plugin settings.", 10000);
 			return;
 		}
 		if (!Platform.isDesktopApp) {
-			new Notice("Noggin: CLI execution mode only works on desktop.", 10000);
+			new Notice("Nous: CLI execution mode only works on desktop.", 10000);
 			return;
 		}
 		const basePath = this.getVaultBasePath();
 		if (!basePath) {
-			new Notice("Noggin: could not resolve this vault's filesystem path.", 10000);
+			new Notice("Nous: could not resolve this vault's filesystem path.", 10000);
 			return;
 		}
 		await this.ensureSkillsInstalled();
-		new Notice("Noggin: searching vault...");
+		new Notice("Nous: searching vault...");
 		const result = await this.cliExec(
 			this.settings.claudeCliPath,
 			buildQueryArgs(question),
@@ -795,7 +795,7 @@ export default class NogginPlugin extends Plugin {
 		);
 		if (result.code !== 0) {
 			await this.appendLog(`ERROR: vault-query CLI exited ${result.code} - ${result.stderr.slice(0, 300)}`);
-			new Notice("Noggin: query failed - see .noggin/pipeline.log", 10000);
+			new Notice("Nous: query failed - see .nous/pipeline.log", 10000);
 			return;
 		}
 
@@ -820,8 +820,8 @@ export default class NogginPlugin extends Plugin {
 	// vision APIs reject it). Desktop-only.
 	private async convertHeicToJpeg(binary: ArrayBuffer): Promise<ArrayBuffer> {
 		const stamp = Date.now();
-		const inPath = path.join(os.tmpdir(), `noggin-heic-${stamp}.heic`);
-		const outPath = path.join(os.tmpdir(), `noggin-heic-${stamp}.jpg`);
+		const inPath = path.join(os.tmpdir(), `nous-heic-${stamp}.heic`);
+		const outPath = path.join(os.tmpdir(), `nous-heic-${stamp}.jpg`);
 		try {
 			await fsPromises.writeFile(inPath, Buffer.from(binary));
 			await new Promise<void>((resolve, reject) => {
@@ -844,7 +844,7 @@ export default class NogginPlugin extends Plugin {
 	async processFile(file: TFile): Promise<boolean> {
 		if (this.inFlight.has(file.path)) return false;
 		if (this.settings.apiProvider !== "local" && !this.settings.apiKeys[this.settings.apiProvider]) {
-			new Notice(`Noggin: no ${this.settings.apiProvider} API key set in plugin settings.`, 10000);
+			new Notice(`Nous: no ${this.settings.apiProvider} API key set in plugin settings.`, 10000);
 			return false;
 		}
 		this.inFlight.add(file.path);
@@ -866,7 +866,7 @@ export default class NogginPlugin extends Plugin {
 				if (isHeic) {
 					if (!Platform.isDesktopApp) {
 						new Notice(
-							`Noggin: HEIC capture needs desktop (uses macOS's sips tool) - "${file.name}" left in inbox.`,
+							`Nous: HEIC capture needs desktop (uses macOS's sips tool) - "${file.name}" left in inbox.`,
 							10000
 						);
 						return false;
@@ -876,7 +876,7 @@ export default class NogginPlugin extends Plugin {
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e);
 						new Notice(
-							`Noggin: HEIC conversion failed for "${file.name}" (needs macOS's sips tool) - see .noggin/pipeline.log`,
+							`Nous: HEIC conversion failed for "${file.name}" (needs macOS's sips tool) - see .nous/pipeline.log`,
 							10000
 						);
 						await this.appendLog(`ERROR: ${file.name} - HEIC conversion failed: ${msg}`);
@@ -984,7 +984,7 @@ export default class NogginPlugin extends Plugin {
 			return true;
 		} catch (e) {
 			if (e instanceof LlmApiError) {
-				new Notice(`Noggin API error (${e.status}) on "${file.name}" - see .noggin/pipeline.log`, 10000);
+				new Notice(`Nous API error (${e.status}) on "${file.name}" - see .nous/pipeline.log`, 10000);
 				await this.appendLog(`ERROR: ${file.name} - ${this.settings.apiProvider} API ${e.status}: ${e.body.slice(0, 300)}`);
 				return false;
 			}
@@ -1051,7 +1051,7 @@ export default class NogginPlugin extends Plugin {
 				}
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				new Notice(`Noggin: wiki build failed for "${cluster.tag}" - ${msg}`, 10000);
+				new Notice(`Nous: wiki build failed for "${cluster.tag}" - ${msg}`, 10000);
 				await this.appendLog(`ERROR: wiki ${cluster.tag} - ${msg}`);
 			}
 		}
@@ -1166,12 +1166,12 @@ export default class NogginPlugin extends Plugin {
 	}
 }
 
-class NogginSettingTab extends PluginSettingTab {
-	plugin: NogginPlugin;
+class NousSettingTab extends PluginSettingTab {
+	plugin: NousPlugin;
 	// Provider whose model dropdown is showing the Custom field. Not persisted.
 	private customModelFor: ApiProvider | null = null;
 
-	constructor(app: App, plugin: NogginPlugin) {
+	constructor(app: App, plugin: NousPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -1292,7 +1292,7 @@ class NogginSettingTab extends PluginSettingTab {
 				new Setting(containerEl)
 					.setName(`${providerLabel} API key`)
 					.setDesc(
-						"Stored locally in this vault's .obsidian/plugins/noggin/data.json - keep this vault out of any repo or sync you don't fully control."
+						"Stored locally in this vault's .obsidian/plugins/nous/data.json - keep this vault out of any repo or sync you don't fully control."
 					)
 					.addText((text) => {
 						text.inputEl.type = "password";
@@ -1367,10 +1367,10 @@ class NogginSettingTab extends PluginSettingTab {
 				button.setButtonText("Test").onClick(async () => {
 					button.setButtonText("Testing…").setDisabled(true);
 					try {
-						new Notice(`Noggin: ${await this.plugin.testConnection()}`);
+						new Notice(`Nous: ${await this.plugin.testConnection()}`);
 					} catch (e) {
 						const msg = e instanceof LlmApiError ? `${e.message} (HTTP ${e.status})` : e instanceof Error ? e.message : String(e);
-						new Notice(`Noggin: connection test failed - ${msg}`, 10000);
+						new Notice(`Nous: connection test failed - ${msg}`, 10000);
 					} finally {
 						button.setButtonText("Test").setDisabled(false);
 					}
@@ -1419,7 +1419,7 @@ class NogginSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h3", { text: "Voice capture" });
 		containerEl.createEl("p", {
-			text: "Transcribing a voice memo (Noggin: Toggle voice capture) prefers local whisper.cpp when it's installed, so no audio ever leaves this machine. Falls back to a Gemini/OpenAI API key above if local isn't set up.",
+			text: "Transcribing a voice memo (Nous: Toggle voice capture) prefers local whisper.cpp when it's installed, so no audio ever leaves this machine. Falls back to a Gemini/OpenAI API key above if local isn't set up.",
 			cls: "setting-item-description",
 		});
 
@@ -1453,7 +1453,7 @@ class NogginSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h3", { text: "Folders" });
 
-		const folderSetting = (key: keyof NogginSettings, name: string) => {
+		const folderSetting = (key: keyof NousSettings, name: string) => {
 			new Setting(containerEl).setName(name).addText((text) =>
 				text.setValue(this.plugin.settings[key] as string).onChange(async (value) => {
 					(this.plugin.settings[key] as string) = value.trim();
@@ -1471,7 +1471,7 @@ class NogginSettingTab extends PluginSettingTab {
 
 // First-run setup: pick a mode, prove it works, watch a first enrichment.
 class OnboardingModal extends Modal {
-	constructor(app: App, private plugin: NogginPlugin) {
+	constructor(app: App, private plugin: NousPlugin) {
 		super(app);
 	}
 
@@ -1485,9 +1485,9 @@ class OnboardingModal extends Modal {
 
 	private renderWelcome() {
 		this.clear();
-		this.setTitle("Welcome to Noggin");
+		this.setTitle("Welcome to Nous");
 		this.contentEl.createEl("p", {
-			text: "Capture anything - a thought, a meeting, a photo, a voice memo - and Noggin turns it into a tagged, linked knowledge graph. One choice to make: how should Noggin think?",
+			text: "Capture anything - a thought, a meeting, a photo, a voice memo - and Nous turns it into a tagged, linked knowledge graph. One choice to make: how should Nous think?",
 		});
 
 		new Setting(this.contentEl)
@@ -1514,7 +1514,7 @@ class OnboardingModal extends Modal {
 
 		new Setting(this.contentEl)
 			.setName("Not now")
-			.setDesc("You can rerun this anytime: command palette → \"Noggin: Open setup wizard\".")
+			.setDesc("You can rerun this anytime: command palette → \"Nous: Open setup wizard\".")
 			.addButton((b) =>
 				b.setButtonText("Skip").onClick(async () => {
 					this.plugin.settings.onboarded = true;
@@ -1601,8 +1601,8 @@ class OnboardingModal extends Modal {
 		const isCli = this.plugin.settings.executionMode === "cli";
 		this.contentEl.createEl("p", {
 			text: isCli
-				? "Noggin will check that Claude Code is installed and reachable. If you haven't installed it yet: docs.claude.com/claude-code (a one-time step)."
-				: "Noggin will make one tiny API call to confirm your key and model work.",
+				? "Nous will check that Claude Code is installed and reachable. If you haven't installed it yet: docs.claude.com/claude-code (a one-time step)."
+				: "Nous will make one tiny API call to confirm your key and model work.",
 		});
 		const status = this.contentEl.createEl("p", { text: "" });
 
@@ -1632,7 +1632,7 @@ class OnboardingModal extends Modal {
 			text: `Drop anything into "${this.plugin.settings.inboxFolder}" - text, images, PDFs, voice memos - and it comes out tagged, summarized, and linked in "${this.plugin.settings.meetingsFolder}".`,
 		});
 		this.contentEl.createEl("p", {
-			text: "Want to see it happen right now? Noggin can drop a sample note into the inbox and enrich it while you watch.",
+			text: "Want to see it happen right now? Nous can drop a sample note into the inbox and enrich it while you watch.",
 		});
 
 		new Setting(this.contentEl)
@@ -1665,7 +1665,7 @@ class QuickCaptureModal extends Modal {
 	private text = "";
 	private attachedFile: File | null = null;
 
-	constructor(app: App, private plugin: NogginPlugin) {
+	constructor(app: App, private plugin: NousPlugin) {
 		super(app);
 	}
 

@@ -38,7 +38,7 @@
   <text x="413" y="138" text-anchor="middle" font-size="11.5" fill="#8b949e">drop it and forget it</text>
 
   <path d="M486 121 h38" stroke="#a371f7" stroke-width="2" fill="none" marker-end="url(#ca)"/>
-  <text x="505" y="108" text-anchor="middle" font-size="11" font-weight="650" fill="#a371f7">Noggin</text>
+  <text x="505" y="108" text-anchor="middle" font-size="11" font-weight="650" fill="#a371f7">Nous</text>
 
   <!-- result note card -->
   <rect x="532" y="34" width="326" height="174" rx="16" fill="#1c1526" stroke="#a371f7" stroke-width="1.5"/>

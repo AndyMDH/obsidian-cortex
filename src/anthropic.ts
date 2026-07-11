@@ -36,7 +36,7 @@ export async function callClaudeTool<T>(
 ): Promise<T> {
 	if (!apiKey) {
 		throw new Error(
-			"No Anthropic API key configured. Set one in Noggin plugin settings."
+			"No Anthropic API key configured. Set one in Nous plugin settings."
 		);
 	}
 

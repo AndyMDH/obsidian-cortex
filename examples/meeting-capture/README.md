@@ -1,7 +1,7 @@
 # Record meetings with one hotkey (macOS)
 
 Press a hotkey when a meeting starts, press it again when it ends — a
-speaker-labeled transcript ("Me:" / "Them:") lands in your Noggin inbox and
+speaker-labeled transcript ("Me:" / "Them:") lands in your Nous inbox and
 comes out as an enriched note. Everything runs on your Mac: the recording
 never leaves your machine, and no API key is used for transcription.
 
@@ -9,8 +9,8 @@ This is the setup for **calls with other people** (Teams/Zoom/Meet — it
 captures system audio *and* your mic). For solo voice notes, the plugin's
 built-in voice-capture button (or hotkey) is all you need.
 
-Once this is set up, Noggin's own **📞 phone icon** in the left sidebar (or
-command palette → "Noggin: Toggle meeting capture") remote-controls
+Once this is set up, Nous's own **📞 phone icon** in the left sidebar (or
+command palette → "Nous: Toggle meeting capture") remote-controls
 QuickRecorder the same way ⌥M does — use whichever trigger you prefer, both
 toggle the same recording.
 
@@ -55,7 +55,7 @@ renamed it), then install it with the launchd job from
 **4. Test it**: play any video, press ⌥M, talk over it for 30 seconds, press
 ⌥M again. First run triggers macOS microphone + screen/system-audio
 permission prompts — allow them. Within a couple of minutes a "Meeting
-transcript" note appears in your inbox, and Noggin enriches it.
+transcript" note appears in your inbox, and Nous enriches it.
 
 ## How it works
 

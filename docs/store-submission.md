@@ -12,7 +12,7 @@ Obsidian + GitHub accounts.
 - [x] GitHub release whose tag matches the manifest version, with `main.js`
       and `manifest.json` attached as individual assets
 - [x] LICENSE (MIT), README with setup + privacy/network disclosure
-- [x] Id/name "noggin" confirmed free in `community-plugins.json`
+- [x] Id/name "nous" confirmed free in `community-plugins.json`
 - [x] Guidelines sweep: network use disclosed, keys stored locally and
       masked, no telemetry, `isDesktopOnly: false` honest, local `claude`
       execution disclosed
@@ -23,7 +23,7 @@ Obsidian + GitHub accounts.
    account.
 2. Connect your GitHub account (verifies you own the repo).
 3. Sidebar → **Plugins** → **New plugin**.
-4. Repository URL: `https://github.com/AndyMDH/obsidian-noggin`
+4. Repository URL: `https://github.com/AndyMDH/obsidian-nous`
 5. Accept the developer policies, **Submit**.
 
 Review is automated first, then human — respond to feedback in the portal.

@@ -1,12 +1,12 @@
-# Noggin Architecture
+# Nous Architecture
 
-This document describes the high-level architecture of the Obsidian Noggin plugin: the conceptual layers, how data flows between them, and the design principles that keep the system predictable.
+This document describes the high-level architecture of the Obsidian Nous plugin: the conceptual layers, how data flows between them, and the design principles that keep the system predictable.
 
 For the implementation details — file structure, build process, provider adapters, and test strategy — see [`TECHNICAL.md`](TECHNICAL.md).
 
-## What Noggin is
+## What Nous is
 
-Noggin turns unstructured captures into a structured, interlinked knowledge graph inside an Obsidian vault. A capture can be:
+Nous turns unstructured captures into a structured, interlinked knowledge graph inside an Obsidian vault. A capture can be:
 
 - a typed or pasted note,
 - a voice memo,
@@ -18,7 +18,7 @@ The plugin does not store its own data structures outside Obsidian. Everything i
 
 ## Conceptual layers
 
-Noggin is organized into five layers. Each layer is a folder in the vault, and each layer has a single responsibility.
+Nous is organized into five layers. Each layer is a folder in the vault, and each layer has a single responsibility.
 
 ```
 ┌─────────────────────────────────────────────────────────────┐

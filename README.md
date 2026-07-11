@@ -4,6 +4,12 @@
 
 <h1 align="center">Noggin</h1>
 
+<p align="center">
+  <a href="https://obsidian.md/plugins?id=noggin"><img alt="Get it from Obsidian" src="https://img.shields.io/badge/Obsidian-Get%20the%20plugin-7C3AED?logo=obsidian&logoColor=white"></a>
+  <img alt="Obsidian downloads" src="https://img.shields.io/badge/dynamic/json?logo=obsidian&color=%237C3AED&label=downloads&query=%24%5B%22noggin%22%5D.downloads&url=https%3A%2F%2Fraw.githubusercontent.com%2Fobsidianmd%2Fobsidian-releases%2Fmaster%2Fcommunity-plugin-stats.json">
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-7C3AED"></a>
+</p>
+
 Capture anything — a typed thought, a voice memo, pasted meeting notes, a
 photo, a PDF — and Noggin turns it into a tagged, linked knowledge graph
 inside Obsidian.
@@ -35,12 +41,20 @@ No coding needed. Everything happens inside Obsidian.
 ## Install
 
 1. In Obsidian: **Settings → Community plugins**, turn community plugins on.
-2. Install and enable the **BRAT** plugin from the Community plugins browser.
-3. Command palette (`Cmd/Ctrl+P`) → **"BRAT: Add a beta plugin"** → paste
-   `AndyMDH/obsidian-noggin`.
-4. Back in **Settings → Community plugins**, turn **Noggin** on.
+2. **Browse**, search **"Noggin"**, click **Install**, then **Enable**.
 
-BRAT keeps Noggin updated automatically from then on.
+That's it — or use the badge above to jump straight to Noggin's page on
+[Obsidian's site](https://obsidian.md/plugins?id=noggin).
+
+<details>
+<summary>Want updates before the official directory picks them up?</summary>
+
+Install [BRAT](https://github.com/TfTHacker/obsidian42-brat) from Community
+plugins, then command palette → **"BRAT: Add a beta plugin"** → paste
+`AndyMDH/obsidian-noggin`. BRAT tracks new GitHub releases immediately
+instead of waiting for the directory to sync — everything else about setup
+and use is identical.
+</details>
 
 ## Set up
 
@@ -79,18 +93,19 @@ image/PDF/voice memo, hit Capture, done. Or drop anything straight into the
   <img alt="Type/paste, voice memo, photo/screenshot, or PDF — all land in 00-Inbox, and Noggin turns each into a tagged, summarized, linked note." src="assets/capture-ways-light.svg">
 </picture>
 
-- **Type or paste** — quick capture, or a note (`Cmd/Ctrl+N`) in `00-Inbox`
-- **Voice** — click the mic icon (or a hotkey), talk, click again (setup below)
-- **Photos & screenshots** — `.png`, `.jpg`, `.webp`, `.heic` (to auto-capture
-  Mac screenshots, see [`examples/`](examples/))
-- **PDFs**
+- **➕ Type or paste** — quick capture, or a note (`Cmd/Ctrl+N`) in `00-Inbox`
+- **🎙️ Voice** — click the mic icon (or a hotkey), talk, click again (more
+  below)
+- **📷 Photos & screenshots** — `.png`, `.jpg`, `.webp`, `.heic` (to
+  auto-capture Mac screenshots, see [`examples/`](examples/))
+- **📄 PDFs** — attach one via quick capture, or drop it in `00-Inbox`
 
 Within seconds, Noggin tags it, summarizes it, links it to related notes,
 and files it in **`10-Notes`** — your original text, image, or recording
 preserved inside. Topics with 4+ notes get a wiki page in **`30-Wikis`** (or
 force one anytime: command palette → "Noggin: Build/update wikis now").
 
-### Capture by voice
+### 🎙️ Capture by voice
 
 Click the **🎙️ mic icon** in the left sidebar (or command palette →
 "Noggin: Toggle voice capture") to start recording, click it again to stop.
@@ -121,7 +136,7 @@ the two variables at the top. Note that setting is usually all-or-nothing:
 once on, the app stops typing transcripts into other apps.
 </details>
 
-### Record meetings (macOS)
+### 📞 Record meetings (macOS)
 
 Calls with other people need system-audio capture, which no Obsidian plugin
 can do on its own — so this one remote-controls a free open-source recorder
@@ -136,7 +151,7 @@ no API key, nothing uploaded). One-time setup in
 Want Noggin to use a specific tag — a client, a project? Add a file with
 that name in **`20-Tags`** and it'll prefer it over inventing its own.
 
-### Ask your vault questions
+### 🔍 Ask your vault questions
 
 Command palette → **"Noggin: Query vault"** — ask in plain language ("what
 did we decide about the Q3 roadmap?") and get a direct, cited answer saved

@@ -1,7 +1,7 @@
 # Record meetings with one hotkey (macOS)
 
 Press a hotkey when a meeting starts, press it again when it ends — a
-speaker-labeled transcript ("Me:" / "Them:") lands in your Cortex inbox and
+speaker-labeled transcript ("Me:" / "Them:") lands in your Noggin inbox and
 comes out as an enriched note. Everything runs on your Mac: the recording
 never leaves your machine, and no API key is used for transcription.
 
@@ -50,7 +50,7 @@ renamed it), then install it with the launchd job from
 **4. Test it**: play any video, press ⌥M, talk over it for 30 seconds, press
 ⌥M again. First run triggers macOS microphone + screen/system-audio
 permission prompts — allow them. Within a couple of minutes a "Meeting
-transcript" note appears in your inbox, and Cortex enriches it.
+transcript" note appears in your inbox, and Noggin enriches it.
 
 ## How it works
 

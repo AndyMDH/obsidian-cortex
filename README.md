@@ -1,21 +1,21 @@
 <p align="center">
-  <img src="assets/logo.svg" alt="Cortex logo — a knowledge graph forming a brain" width="112">
+  <img src="assets/logo.svg" alt="Noggin logo — a knowledge graph forming a brain" width="112">
 </p>
 
-<h1 align="center">Cortex</h1>
+<h1 align="center">Noggin</h1>
 
 Capture anything — a typed thought, a voice memo, pasted meeting notes, a
-photo, a PDF — and Cortex turns it into a tagged, linked knowledge graph
+photo, a PDF — and Noggin turns it into a tagged, linked knowledge graph
 inside Obsidian.
 Every capture gets summarized and connected to related notes automatically,
-and once a topic has enough notes behind it, Cortex writes a wiki page
+and once a topic has enough notes behind it, Noggin writes a wiki page
 pulling everything together.
 
 No coding needed. Everything happens inside Obsidian.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/pipeline-dark.svg">
-  <img alt="Capture anything into 00-Inbox; Cortex turns it into a tagged, linked note in 10-Notes; topics with 4+ notes get a wiki page in 30-Wikis." src="assets/pipeline-light.svg">
+  <img alt="Capture anything into 00-Inbox; Noggin turns it into a tagged, linked note in 10-Notes; topics with 4+ notes get a wiki page in 30-Wikis." src="assets/pipeline-light.svg">
 </picture>
 
 ## What you need
@@ -37,26 +37,26 @@ No coding needed. Everything happens inside Obsidian.
 1. In Obsidian: **Settings → Community plugins**, turn community plugins on.
 2. Install and enable the **BRAT** plugin from the Community plugins browser.
 3. Command palette (`Cmd/Ctrl+P`) → **"BRAT: Add a beta plugin"** → paste
-   `AndyMDH/obsidian-cortex`.
-4. Back in **Settings → Community plugins**, turn **Cortex** on.
+   `AndyMDH/obsidian-noggin`.
+4. Back in **Settings → Community plugins**, turn **Noggin** on.
 
-BRAT keeps Cortex updated automatically from then on.
+BRAT keeps Noggin updated automatically from then on.
 
 ## Set up
 
-**A setup wizard opens the first time you enable Cortex** — it walks you
+**A setup wizard opens the first time you enable Noggin** — it walks you
 through the one choice below, checks the connection, and can drop a sample
 note into your inbox so you watch your first enrichment happen. (Rerun it
-anytime: command palette → "Cortex: Open setup wizard".)
+anytime: command palette → "Noggin: Open setup wizard".)
 
 Prefer doing it by hand? All settings live inside Obsidian (nothing to
 configure on your computer itself). Open **Obsidian's settings** — the gear
-icon bottom-left, or `Cmd/Ctrl+,` — and click **Cortex** in the left
+icon bottom-left, or `Cmd/Ctrl+,` — and click **Noggin** in the left
 sidebar. One choice to make:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/settings-nav-dark.svg">
-  <img alt="Obsidian's settings window: Cortex in the left sidebar under Community plugins, with Execution mode, Provider, and Model settings in the main pane." src="assets/settings-nav-light.svg">
+  <img alt="Obsidian's settings window: Noggin in the left sidebar under Community plugins, with Execution mode, Provider, and Model settings in the main pane." src="assets/settings-nav-light.svg">
 </picture>
 
 - **Claude subscription (Pro/Max)?** Set **Execution mode** to
@@ -70,13 +70,13 @@ the same panel confirms your choice works before you capture anything.
 ## Use it
 
 The fastest way in: click the **➕ quick capture** icon in the left sidebar
-(or command palette → "Cortex: Quick capture") — type, paste, or attach an
+(or command palette → "Noggin: Quick capture") — type, paste, or attach an
 image/PDF/voice memo, hit Capture, done. Or drop anything straight into the
 **`00-Inbox`** folder — same result:
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="assets/capture-ways-dark.svg">
-  <img alt="Type/paste, voice memo, photo/screenshot, or PDF — all land in 00-Inbox, and Cortex turns each into a tagged, summarized, linked note." src="assets/capture-ways-light.svg">
+  <img alt="Type/paste, voice memo, photo/screenshot, or PDF — all land in 00-Inbox, and Noggin turns each into a tagged, summarized, linked note." src="assets/capture-ways-light.svg">
 </picture>
 
 - **Type or paste** — quick capture, or a note (`Cmd/Ctrl+N`) in `00-Inbox`
@@ -85,14 +85,14 @@ image/PDF/voice memo, hit Capture, done. Or drop anything straight into the
   Mac screenshots, see [`examples/`](examples/))
 - **PDFs**
 
-Within seconds, Cortex tags it, summarizes it, links it to related notes,
+Within seconds, Noggin tags it, summarizes it, links it to related notes,
 and files it in **`10-Notes`** — your original text, image, or recording
 preserved inside. Topics with 4+ notes get a wiki page in **`30-Wikis`** (or
-force one anytime: command palette → "Cortex: Build/update wikis now").
+force one anytime: command palette → "Noggin: Build/update wikis now").
 
 ### Capture by voice
 
-One-time setup: **Settings → Hotkeys**, search **"Cortex: Toggle voice
+One-time setup: **Settings → Hotkeys**, search **"Noggin: Toggle voice
 capture"**, give it a key (say `Alt+Space`). From then on:
 
 **Press the key, talk, press it again.** That's the whole thing — the
@@ -104,7 +104,7 @@ dropped in `00-Inbox` works too — including recordings made in the Obsidian
 **mobile** app on the go.)
 
 One requirement: transcription (speech → text) runs through **Gemini or
-OpenAI**, so an API key for one of them must be set in Cortex's settings —
+OpenAI**, so an API key for one of them must be set in Noggin's settings —
 even in Claude Code or GLM mode, where it's used *only* for transcription.
 (Claude and GLM have no audio API yet.)
 
@@ -129,12 +129,12 @@ in your inbox and comes out enriched. Fully local (free open-source recorder
 plus on-device Whisper — no API key, nothing uploaded). One-time setup in
 [`examples/meeting-capture/`](examples/meeting-capture/).
 
-Want Cortex to use a specific tag — a client, a project? Add a file with
+Want Noggin to use a specific tag — a client, a project? Add a file with
 that name in **`20-Tags`** and it'll prefer it over inventing its own.
 
 ### Ask your vault questions
 
-Command palette → **"Cortex: Query vault"** — ask in plain language ("what
+Command palette → **"Noggin: Query vault"** — ask in plain language ("what
 did we decide about the Q3 roadmap?") and get a direct, cited answer saved
 to `40-Queries`. Needs CLI execution mode.
 
@@ -177,16 +177,16 @@ and seeing a linked note. (Full detail:
    deterministically from note metadata) — updated, not appended, as new
    notes arrive.
 
-Every step is logged to `.cortex/pipeline.log` in the vault.
+Every step is logged to `.noggin/pipeline.log` in the vault.
 
 ## If something breaks
 
-- **Nothing happened?** Command palette → "Cortex: Process inbox now" and
+- **Nothing happened?** Command palette → "Noggin: Process inbox now" and
   watch for an error notification.
 - **"Claude not found" (CLI mode)?** Run `which claude` in Terminal and
-  paste the result into the **Claude CLI path** field in Obsidian's Cortex
+  paste the result into the **Claude CLI path** field in Obsidian's Noggin
   settings.
-- **Logs**: `.cortex/pipeline.log` (hidden file in your vault) records every
+- **Logs**: `.noggin/pipeline.log` (hidden file in your vault) records every
   run and error.
 
 ## Good to know

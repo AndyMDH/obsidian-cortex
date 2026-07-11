@@ -3,7 +3,7 @@ set -uo pipefail
 
 # Watches QuickRecorder's save folder for finished meeting recordings,
 # transcribes them locally with whisper.cpp, and drops a speaker-labeled
-# markdown transcript into the Cortex inbox (00-Raw) - Cortex enriches it
+# markdown transcript into the Noggin inbox (00-Raw) - Noggin enriches it
 # from there like any other capture.
 #
 # Recording side: QuickRecorder bound to Opt+M (toggle). With
@@ -39,7 +39,7 @@ log() { printf '%s %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$LOG"; }
 
 notify() {
   osascript -e 'on run argv
-    display notification (item 1 of argv) with title "Cortex"
+    display notification (item 1 of argv) with title "Noggin"
   end run' "$1" >/dev/null 2>&1 || true
 }
 

@@ -4,14 +4,14 @@ set -euo pipefail
 # Triggered by a launchd WatchPaths job (see the README's "Photos and
 # screenshots" section for the matching plist) whenever anything changes in
 # your screenshot folder - a coarse signal, so this script does the actual
-# filtering down to real screenshots. Moves them into Cortex's inbox -
-# Cortex picks them up and enriches them automatically from there.
+# filtering down to real screenshots. Moves them into Noggin's inbox -
+# Noggin picks them up and enriches them automatically from there.
 #
 # Edit the three variables below to match your setup, then make this file
 # executable: chmod +x screenshot-capture.sh
 
 VAULT="$HOME/Obsidian/YourVaultName"
-INBOX_FOLDER="00-Inbox" # must match Cortex's "Inbox folder" setting
+INBOX_FOLDER="00-Inbox" # must match Noggin's "Inbox folder" setting
 SCREENSHOT_DIR="$HOME/Desktop" # macOS's default - check System Settings ->
                                 # Screenshots if you've changed it
 

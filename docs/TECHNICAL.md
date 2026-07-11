@@ -1,11 +1,11 @@
-# Cortex Technical Guide
+# Noggin Technical Guide
 
-This document maps the implementation of the Obsidian Cortex plugin. It complements [`ARCHITECTURE.md`](ARCHITECTURE.md), which describes the conceptual layers and data flow.
+This document maps the implementation of the Obsidian Noggin plugin. It complements [`ARCHITECTURE.md`](ARCHITECTURE.md), which describes the conceptual layers and data flow.
 
 ## Project layout
 
 ```
-obsidian-cortex/
+obsidian-noggin/
 ├── main.ts                 # Obsidian plugin entry point; UI, settings, file I/O, orchestration
 ├── src/
 │   ├── types.ts            # Settings schema, result types, model option lists
@@ -41,13 +41,13 @@ obsidian-cortex/
 
 ## `main.ts`: the Obsidian facade
 
-`CortexPlugin` is the main class. It owns:
+`NogginPlugin` is the main class. It owns:
 
 - **Lifecycle**: `onload()`, `loadSettings()`, `saveSettings()`.
 - **Commands**: process inbox, build wikis, query vault, quick capture, toggle voice capture, open setup wizard.
-- **UI wiring**: settings tab (`CortexSettingTab`), onboarding modal (`OnboardingModal`), quick-capture modal (`QuickCaptureModal`).
+- **UI wiring**: settings tab (`NogginSettingTab`), onboarding modal (`OnboardingModal`), quick-capture modal (`QuickCaptureModal`).
 - **Execution routing**: decides whether to use API mode or CLI mode for each operation.
-- **File I/O**: reads/writes notes, moves attachments, converts HEIC, transcribes audio, appends to `.cortex/pipeline.log`.
+- **File I/O**: reads/writes notes, moves attachments, converts HEIC, transcribes audio, appends to `.noggin/pipeline.log`.
 
 ### Commands added to Obsidian
 
@@ -83,7 +83,7 @@ Defines the settings schema and result types.
 
 Key types:
 
-- `CortexSettings`: all user-configurable state, including execution mode, provider, API keys, models, folder names, thresholds, and onboarding flag.
+- `NogginSettings`: all user-configurable state, including execution mode, provider, API keys, models, folder names, thresholds, and onboarding flag.
 - `ExecutionMode`: `"api" | "cli"`.
 - `ApiProvider`: `"anthropic" | "openai" | "gemini" | "local"`.
 - `EnrichResult`: structured output from the enrichment model.
@@ -161,7 +161,7 @@ Pure helpers for CLI mode. No Obsidian dependency.
 
 - `augmentedPath()` — prepends common binary directories to `PATH`.
 - `buildEnrichArgs()`, `buildWikiArgs()`, `buildQueryArgs()` — construct `claude` CLI argument arrays.
-- `summarizeLogLines()` — parses `.cortex/pipeline.log` after a CLI run to count enriched notes and new/updated wikis.
+- `summarizeLogLines()` — parses `.noggin/pipeline.log` after a CLI run to count enriched notes and new/updated wikis.
 
 `CliExec` is a function type; the real implementation in `main.ts` wraps Node's `child_process.execFile`. The type is injected so tests can stub it.
 
@@ -190,7 +190,7 @@ Folder names are interpolated from settings so the skills match the user's confi
 9. Find any existing wiki link for the returned tags.
 10. Build the final Markdown with `buildMeetingMarkdown()`.
 11. Create the note in `10-Notes` and move/delete the original inbox file.
-12. Append a structured line to `.cortex/pipeline.log`.
+12. Append a structured line to `.noggin/pipeline.log`.
 
 ### API mode wiki build (`buildWikisViaApi()`)
 
@@ -209,11 +209,11 @@ Folder names are interpolated from settings so the skills match the user's confi
 3. Ensure skills are installed in `.claude/skills/`.
 4. Run `claude -p "Use the meeting-enricher skill..." --allowedTools Read,Write,Edit,Glob,Grep,Bash --permission-mode acceptEdits`.
 5. Run the wiki-builder skill similarly.
-6. Parse `.cortex/pipeline.log` to report results.
+6. Parse `.noggin/pipeline.log` to report results.
 
 ## Settings and configuration
 
-Settings are persisted by Obsidian via `this.loadData()` / `this.saveData()` into `.obsidian/plugins/cortex/data.json`.
+Settings are persisted by Obsidian via `this.loadData()` / `this.saveData()` into `.obsidian/plugins/noggin/data.json`.
 
 | Setting | Meaning |
 |---|---|
@@ -228,7 +228,7 @@ Settings are persisted by Obsidian via `this.loadData()` / `this.saveData()` int
 | `autoProcessOnCreate` | Whether to enrich new inbox files automatically. |
 | `onboarded` | Whether the first-run wizard has been completed. |
 
-The settings UI in `CortexSettingTab` is built dynamically: it shows/hides fields based on execution mode and provider, and includes a **Test connection** button.
+The settings UI in `NogginSettingTab` is built dynamically: it shows/hides fields based on execution mode and provider, and includes a **Test connection** button.
 
 ## Testing strategy
 
@@ -253,7 +253,7 @@ npm test
 Errors are surfaced in two ways:
 
 1. **Obsidian notices** — short-lived toast notifications for user-facing failures.
-2. **`.cortex/pipeline.log`** — append-only log inside the vault with ISO timestamps and structured events:
+2. **`.noggin/pipeline.log`** — append-only log inside the vault with ISO timestamps and structured events:
    - `ENRICHED: <filename> - tags: [...] - project: <project>`
    - `NEW WIKI: <topic> - sources: <count>`
    - `UPDATED WIKI: <topic> - sources: <count>`
@@ -266,7 +266,7 @@ API errors are wrapped in `LlmApiError` so the HTTP status and truncated respons
 
 ## Extension points
 
-If you want to change how Cortex behaves, these are the typical seams:
+If you want to change how Noggin behaves, these are the typical seams:
 
 | Change | Where to look |
 |---|---|
@@ -276,7 +276,7 @@ If you want to change how Cortex behaves, these are the typical seams:
 | Different tagging rules | `enrichSystemPrompt()` in `prompts.ts` and the `meeting-enricher` skill in `skillTemplates.ts`. |
 | Different wiki threshold behavior | `buildWikisViaApi()` and the `wiki-builder` skill. |
 | New query behavior | The `vault-query` skill; currently CLI-only because it needs open-ended reasoning. |
-| New settings | Add to `CortexSettings` and `DEFAULT_SETTINGS` in `types.ts`, then render in `CortexSettingTab`. |
+| New settings | Add to `NogginSettings` and `DEFAULT_SETTINGS` in `types.ts`, then render in `NogginSettingTab`. |
 
 ## Important implementation notes
 

@@ -23,7 +23,7 @@ export class OpenAiCompatibleProvider implements LlmProvider {
 		if (message.attachment?.kind === "document") {
 			// Plain Error (not LlmApiError) so the message surfaces to the user as-is.
 			throw new Error(
-				"This provider does not support PDF/document ingestion in Cortex - switch to Anthropic or Gemini in plugin settings, or use CLI execution mode."
+				"This provider does not support PDF/document ingestion in Noggin - switch to Anthropic or Gemini in plugin settings, or use CLI execution mode."
 			);
 		}
 

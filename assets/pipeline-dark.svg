@@ -23,7 +23,7 @@
   <text x="319" y="106" text-anchor="middle" font-size="15" font-weight="650" fill="#e6edf3">Inbox</text>
   <text x="319" y="128" text-anchor="middle" font-size="12" fill="#8b949e">drop it and forget it</text>
 
-  <!-- cortex spark on the arrow -->
+  <!-- noggin spark on the arrow -->
   <path d="M394 95 h30" stroke="#a371f7" stroke-width="2" fill="none"/>
   <circle cx="440" cy="95" r="17" fill="url(#pg)"/>
   <g stroke="#ffffff" stroke-width="1.8" stroke-linecap="round">
@@ -39,7 +39,7 @@
     <circle cx="449" cy="100" r="2.2"/>
     <circle cx="436" cy="104" r="2.2"/>
   </g>
-  <text x="440" y="135" text-anchor="middle" font-size="11.5" font-weight="650" fill="#a371f7">Cortex</text>
+  <text x="440" y="135" text-anchor="middle" font-size="11.5" font-weight="650" fill="#a371f7">Noggin</text>
   <path d="M457 95 h30" stroke="#a371f7" stroke-width="2" fill="none" marker-end="url(#pa)"/>
 
   <!-- notes -->

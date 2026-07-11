@@ -3,7 +3,7 @@ export type ExecutionMode = "api" | "cli";
 // Only used in API mode - CLI mode always shells out to `claude`.
 export type ApiProvider = "anthropic" | "openai" | "gemini" | "glm" | "local";
 
-export interface CortexSettings {
+export interface NogginSettings {
 	executionMode: ExecutionMode;
 	apiProvider: ApiProvider;
 	apiKeys: Record<ApiProvider, string>;
@@ -49,7 +49,7 @@ export const MODEL_OPTIONS: Record<Exclude<ApiProvider, "local">, { id: string; 
 	],
 };
 
-export const DEFAULT_SETTINGS: CortexSettings = {
+export const DEFAULT_SETTINGS: NogginSettings = {
 	executionMode: "cli",
 	apiProvider: "anthropic",
 	apiKeys: { anthropic: "", openai: "", gemini: "", glm: "", local: "" },

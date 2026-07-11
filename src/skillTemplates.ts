@@ -56,7 +56,7 @@ of the body of every note in \`${f.meetings}/\`. If it matches an existing note
 closely enough that it's clearly the same transcript:
 
 - Move the inbox file to \`${f.inbox}/duplicates/\` (create the folder if needed).
-- Append to \`.cortex/pipeline.log\`:
+- Append to \`.noggin/pipeline.log\`:
   \`<ISO timestamp> DUPLICATE: <filename> matches <existing note> - moved to duplicates/\`
 - Do not enrich it further. Move to the next inbox file.
 
@@ -145,7 +145,7 @@ registry useless, so the default answer is "use what exists."
    ## Notes with this tag
    (Obsidian backlinks panel shows these automatically - leave this section empty)
    \`\`\`
-   Then append to \`.cortex/pipeline.log\`:
+   Then append to \`.noggin/pipeline.log\`:
    \`<ISO timestamp> NEW TAG: <tag> - <one-line justification>\`
 5. Tie-break rule: if genuinely torn between reusing an existing tag and
    minting a new one, always reuse the existing one.
@@ -232,7 +232,7 @@ the same topic name. If linking to an existing wiki, use its actual filename
    Report.md\`) - this is the file the \`## Captured image\`/\`## Captured
    document\` embed points to, so it must actually exist at that path
    afterward, not be deleted.
-4. Append to \`.cortex/pipeline.log\`:
+4. Append to \`.noggin/pipeline.log\`:
    \`<ISO timestamp> ENRICHED: <final filename> - tags: [<tags>] - project: <project>\`
 
 ## Rules of engagement
@@ -411,7 +411,7 @@ meetings into connected prose.
 Use the topic's tag name (capitalized/humanized) as \`<Topic>\` unless the
 meeting notes clearly point to a more specific, more human title.
 
-3. Append to \`.cortex/pipeline.log\`:
+3. Append to \`.noggin/pipeline.log\`:
    \`<ISO timestamp> NEW WIKI: <topic> - sources: <count>\`
 
 ## Step 4 — Update an existing wiki
@@ -426,7 +426,7 @@ If a wiki's topic has gained meeting notes since its \`updated\` date:
 4. Append new notes to \`## Sources\`. **Never drop existing Sources** — only add.
 5. Update \`sources:\` count and \`updated:\` date in frontmatter. Leave \`created:\`
    untouched.
-6. Append to \`.cortex/pipeline.log\`:
+6. Append to \`.noggin/pipeline.log\`:
    \`<ISO timestamp> UPDATED WIKI: <topic> - sources: <count>\`
 
 ## Step 5 — Close the loop (hub-and-spoke linking)

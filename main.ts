@@ -14,7 +14,7 @@ import { execFile } from "child_process";
 import { promises as fsPromises } from "fs";
 import * as os from "os";
 import * as path from "path";
-import type { ApiProvider, CortexSettings, EnrichResult, NoteIndexEntry, WikiSynthesisResult } from "./src/types";
+import type { ApiProvider, NogginSettings, EnrichResult, NoteIndexEntry, WikiSynthesisResult } from "./src/types";
 import { DEFAULT_SETTINGS, MODEL_OPTIONS } from "./src/types";
 import { AnthropicProvider } from "./src/anthropic";
 import type { HttpPost } from "./src/anthropic";
@@ -43,11 +43,11 @@ import type { CliExec } from "./src/cliRunner";
 import { meetingEnricherSkill, vaultQuerySkill, wikiBuilderSkill } from "./src/skillTemplates";
 import type { SkillFolders } from "./src/skillTemplates";
 
-const LOG_FOLDER = ".cortex";
+const LOG_FOLDER = ".noggin";
 const LOG_FILE = `${LOG_FOLDER}/pipeline.log`;
 
-export default class CortexPlugin extends Plugin {
-	settings: CortexSettings;
+export default class NogginPlugin extends Plugin {
+	settings: NogginSettings;
 	private inFlight = new Set<string>();
 	private cliRunInProgress = false;
 	private voiceRecorder: MediaRecorder | null = null;
@@ -55,7 +55,7 @@ export default class CortexPlugin extends Plugin {
 
 	async onload() {
 		await this.loadSettings();
-		this.addSettingTab(new CortexSettingTab(this.app, this));
+		this.addSettingTab(new NogginSettingTab(this.app, this));
 
 		this.addCommand({
 			id: "process-inbox",
@@ -81,7 +81,7 @@ export default class CortexPlugin extends Plugin {
 			callback: () => new QuickCaptureModal(this.app, this).open(),
 		});
 
-		this.addRibbonIcon("plus-circle", "Cortex quick capture", () => {
+		this.addRibbonIcon("plus-circle", "Noggin quick capture", () => {
 			new QuickCaptureModal(this.app, this).open();
 		});
 
@@ -104,7 +104,7 @@ export default class CortexPlugin extends Plugin {
 				callback: () => void this.toggleMeetingCapture(),
 			});
 
-			this.addRibbonIcon("mic", "Cortex: toggle meeting capture", () => {
+			this.addRibbonIcon("mic", "Noggin: toggle meeting capture", () => {
 				void this.toggleMeetingCapture();
 			});
 		}
@@ -132,7 +132,7 @@ export default class CortexPlugin extends Plugin {
 	}
 
 	async loadSettings() {
-		const data = (await this.loadData()) as Partial<CortexSettings> | null;
+		const data = (await this.loadData()) as Partial<NogginSettings> | null;
 		this.settings = Object.assign({}, DEFAULT_SETTINGS, data);
 		// Installs that predate the wizard already have settings on disk -
 		// don't greet a configured vault with a first-run welcome.
@@ -168,7 +168,7 @@ export default class CortexPlugin extends Plugin {
 			return transcribeWithOpenAi(this.httpPostBinary, keys.openai, mediaType, new Uint8Array(binary), filename);
 		}
 		throw new Error(
-			"Audio capture needs a Gemini or OpenAI API key for transcription (Settings → Cortex). The key is only used to turn speech into text - enrichment still runs in your chosen mode."
+			"Audio capture needs a Gemini or OpenAI API key for transcription (Settings → Noggin). The key is only used to turn speech into text - enrichment still runs in your chosen mode."
 		);
 	}
 
@@ -379,7 +379,7 @@ export default class CortexPlugin extends Plugin {
 			path,
 			"Quick thought after today's kickoff with the new client: they want the reporting dashboard live before the end of next quarter, but their data quality is a mess - half the customer records are missing regions. Maria offered to run a cleanup sprint first. I should sketch the dashboard wireframe this week and check whether we can reuse the ETL setup from the last project.\n"
 		);
-		new Notice("Cortex: sample note dropped in the inbox - watch it get enriched.");
+		new Notice("Noggin: sample note dropped in the inbox - watch it get enriched.");
 	}
 
 	// Hands-free voice capture: one command toggles recording, no UI. The
@@ -393,7 +393,7 @@ export default class CortexPlugin extends Plugin {
 		try {
 			this.voiceStream = await navigator.mediaDevices.getUserMedia({ audio: true });
 		} catch {
-			new Notice("Cortex: microphone access denied - allow it for Obsidian in system settings.", 8000);
+			new Notice("Noggin: microphone access denied - allow it for Obsidian in system settings.", 8000);
 			return;
 		}
 		const recorder = new MediaRecorder(this.voiceStream);
@@ -415,13 +415,13 @@ export default class CortexPlugin extends Plugin {
 					`${this.settings.inboxFolder}/${stamp} Voice note.${ext}`,
 					buffer
 				);
-				new Notice("Cortex: voice note captured.");
+				new Notice("Noggin: voice note captured.");
 				if (!this.settings.autoProcessOnCreate) void this.processInbox();
 			})();
 		};
 		recorder.start();
 		this.voiceRecorder = recorder;
-		new Notice("Cortex: recording - press the hotkey again to stop.");
+		new Notice("Noggin: recording - press the hotkey again to stop.");
 	}
 
 	// One button for full meeting capture (both sides of a call). Obsidian's
@@ -439,7 +439,7 @@ export default class CortexPlugin extends Plugin {
 	// in the vault inbox on its own, same as today.
 	async toggleMeetingCapture() {
 		if (!Platform.isMacOS) {
-			new Notice("Cortex: meeting capture needs QuickRecorder, macOS only.");
+			new Notice("Noggin: meeting capture needs QuickRecorder, macOS only.");
 			return;
 		}
 		const wasRecording = await this.isQuickRecorderRecording();
@@ -447,12 +447,12 @@ export default class CortexPlugin extends Plugin {
 			await this.runAppleScript('tell application "QuickRecorder" to record system audio with microphone');
 		} catch {
 			new Notice(
-				"Cortex: couldn't reach QuickRecorder - the first time this runs, macOS may ask to let Obsidian control it. Approve that, then try again.",
+				"Noggin: couldn't reach QuickRecorder - the first time this runs, macOS may ask to let Obsidian control it. Approve that, then try again.",
 				10000
 			);
 			return;
 		}
-		new Notice(wasRecording ? "Cortex: meeting recording stopped." : "Cortex: meeting recording started.");
+		new Notice(wasRecording ? "Noggin: meeting recording stopped." : "Noggin: meeting recording started.");
 	}
 
 	private runAppleScript(script: string): Promise<void> {
@@ -503,7 +503,7 @@ export default class CortexPlugin extends Plugin {
 		if (text.trim()) {
 			await this.app.vault.create(`${this.settings.inboxFolder}/${stamp}.md`, text.trim() + "\n");
 		}
-		new Notice("Cortex: captured to inbox.");
+		new Notice("Noggin: captured to inbox.");
 		if (!this.settings.autoProcessOnCreate) void this.processInbox();
 	}
 
@@ -548,26 +548,26 @@ export default class CortexPlugin extends Plugin {
 				if (await this.processFile(file)) enriched++;
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				new Notice(`Cortex: failed on "${file.name}" - ${msg}`, 10000);
+				new Notice(`Noggin: failed on "${file.name}" - ${msg}`, 10000);
 				await this.appendLog(`ERROR: ${file.name} - ${msg}`);
 			}
 		}
 
 		if (enriched > 0) {
-			new Notice(`Cortex: ${enriched} note${enriched === 1 ? "" : "s"} enriched.`);
+			new Notice(`Noggin: ${enriched} note${enriched === 1 ? "" : "s"} enriched.`);
 			await this.buildWikisViaApi();
 		}
 	}
 
 	private async processInboxViaCli() {
 		if (!Platform.isDesktopApp) {
-			new Notice("Cortex: CLI execution mode only works on desktop.", 10000);
+			new Notice("Noggin: CLI execution mode only works on desktop.", 10000);
 			return;
 		}
 		if (this.cliRunInProgress) return;
 		const basePath = this.getVaultBasePath();
 		if (!basePath) {
-			new Notice("Cortex: could not resolve this vault's filesystem path.", 10000);
+			new Notice("Noggin: could not resolve this vault's filesystem path.", 10000);
 			return;
 		}
 
@@ -608,7 +608,7 @@ export default class CortexPlugin extends Plugin {
 				await this.appendLog(`TRANSCRIBED: ${file.name} -> ${notePath}`);
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				new Notice(`Cortex: could not transcribe "${file.name}" - ${msg}`, 10000);
+				new Notice(`Noggin: could not transcribe "${file.name}" - ${msg}`, 10000);
 				await this.appendLog(`ERROR: ${file.name} - transcription failed: ${msg}`);
 			}
 		}
@@ -630,7 +630,7 @@ export default class CortexPlugin extends Plugin {
 				`ERROR: meeting-enricher CLI exited ${enrichResult.code} - ${enrichResult.stderr.slice(0, 300)}`
 			);
 			new Notice(
-				`Cortex: enrichment failed (is "${this.settings.claudeCliPath}" the right CLI path?) - see .cortex/pipeline.log`,
+				`Noggin: enrichment failed (is "${this.settings.claudeCliPath}" the right CLI path?) - see .noggin/pipeline.log`,
 				10000
 			);
 			return;
@@ -645,7 +645,7 @@ export default class CortexPlugin extends Plugin {
 			await this.appendLog(
 				`ERROR: wiki-builder CLI exited ${wikiResult.code} - ${wikiResult.stderr.slice(0, 300)}`
 			);
-			new Notice("Cortex: wiki step failed - see .cortex/pipeline.log", 10000);
+			new Notice("Noggin: wiki step failed - see .noggin/pipeline.log", 10000);
 			return;
 		}
 
@@ -655,21 +655,21 @@ export default class CortexPlugin extends Plugin {
 			if (summary.newWikis > 0) parts.push(`${summary.newWikis} new wiki${summary.newWikis === 1 ? "" : "s"}`);
 			if (summary.updatedWikis > 0)
 				parts.push(`${summary.updatedWikis} wiki${summary.updatedWikis === 1 ? "" : "s"} updated`);
-			new Notice(`Cortex: ${parts.join(", ")}.`);
+			new Notice(`Noggin: ${parts.join(", ")}.`);
 		}
 		if (summary.problems > 0) {
-			new Notice(`Cortex: ${summary.problems} item(s) skipped or errored - see .cortex/pipeline.log`, 8000);
+			new Notice(`Noggin: ${summary.problems} item(s) skipped or errored - see .noggin/pipeline.log`, 8000);
 		}
 	}
 
 	private async runWikiBuilderCli() {
 		if (!Platform.isDesktopApp) {
-			new Notice("Cortex: CLI execution mode only works on desktop.", 10000);
+			new Notice("Noggin: CLI execution mode only works on desktop.", 10000);
 			return;
 		}
 		const basePath = this.getVaultBasePath();
 		if (!basePath) {
-			new Notice("Cortex: could not resolve this vault's filesystem path.", 10000);
+			new Notice("Noggin: could not resolve this vault's filesystem path.", 10000);
 			return;
 		}
 		await this.ensureSkillsInstalled();
@@ -681,7 +681,7 @@ export default class CortexPlugin extends Plugin {
 		);
 		if (result.code !== 0) {
 			await this.appendLog(`ERROR: wiki-builder CLI exited ${result.code} - ${result.stderr.slice(0, 300)}`);
-			new Notice("Cortex: wiki step failed - see .cortex/pipeline.log", 10000);
+			new Notice("Noggin: wiki step failed - see .noggin/pipeline.log", 10000);
 			return;
 		}
 		const summary = summarizeLogLines(await this.readLogSince(before));
@@ -689,25 +689,25 @@ export default class CortexPlugin extends Plugin {
 		if (summary.newWikis > 0) parts.push(`${summary.newWikis} new wiki${summary.newWikis === 1 ? "" : "s"}`);
 		if (summary.updatedWikis > 0)
 			parts.push(`${summary.updatedWikis} wiki${summary.updatedWikis === 1 ? "" : "s"} updated`);
-		new Notice(parts.length > 0 ? `Cortex: ${parts.join(", ")}.` : "Cortex: no wikis to build or update.");
+		new Notice(parts.length > 0 ? `Noggin: ${parts.join(", ")}.` : "Noggin: no wikis to build or update.");
 	}
 
 	async runVaultQuery(question: string) {
 		if (this.settings.executionMode !== "cli") {
-			new Notice("Cortex: vault query needs CLI execution mode (it's an open-ended search, not a fixed-schema call) - switch modes in plugin settings.", 10000);
+			new Notice("Noggin: vault query needs CLI execution mode (it's an open-ended search, not a fixed-schema call) - switch modes in plugin settings.", 10000);
 			return;
 		}
 		if (!Platform.isDesktopApp) {
-			new Notice("Cortex: CLI execution mode only works on desktop.", 10000);
+			new Notice("Noggin: CLI execution mode only works on desktop.", 10000);
 			return;
 		}
 		const basePath = this.getVaultBasePath();
 		if (!basePath) {
-			new Notice("Cortex: could not resolve this vault's filesystem path.", 10000);
+			new Notice("Noggin: could not resolve this vault's filesystem path.", 10000);
 			return;
 		}
 		await this.ensureSkillsInstalled();
-		new Notice("Cortex: searching vault...");
+		new Notice("Noggin: searching vault...");
 		const result = await this.cliExec(
 			this.settings.claudeCliPath,
 			buildQueryArgs(question),
@@ -715,7 +715,7 @@ export default class CortexPlugin extends Plugin {
 		);
 		if (result.code !== 0) {
 			await this.appendLog(`ERROR: vault-query CLI exited ${result.code} - ${result.stderr.slice(0, 300)}`);
-			new Notice("Cortex: query failed - see .cortex/pipeline.log", 10000);
+			new Notice("Noggin: query failed - see .noggin/pipeline.log", 10000);
 			return;
 		}
 
@@ -740,8 +740,8 @@ export default class CortexPlugin extends Plugin {
 	// vision APIs reject it). Desktop-only.
 	private async convertHeicToJpeg(binary: ArrayBuffer): Promise<ArrayBuffer> {
 		const stamp = Date.now();
-		const inPath = path.join(os.tmpdir(), `cortex-heic-${stamp}.heic`);
-		const outPath = path.join(os.tmpdir(), `cortex-heic-${stamp}.jpg`);
+		const inPath = path.join(os.tmpdir(), `noggin-heic-${stamp}.heic`);
+		const outPath = path.join(os.tmpdir(), `noggin-heic-${stamp}.jpg`);
 		try {
 			await fsPromises.writeFile(inPath, Buffer.from(binary));
 			await new Promise<void>((resolve, reject) => {
@@ -764,7 +764,7 @@ export default class CortexPlugin extends Plugin {
 	async processFile(file: TFile): Promise<boolean> {
 		if (this.inFlight.has(file.path)) return false;
 		if (this.settings.apiProvider !== "local" && !this.settings.apiKeys[this.settings.apiProvider]) {
-			new Notice(`Cortex: no ${this.settings.apiProvider} API key set in plugin settings.`, 10000);
+			new Notice(`Noggin: no ${this.settings.apiProvider} API key set in plugin settings.`, 10000);
 			return false;
 		}
 		this.inFlight.add(file.path);
@@ -786,7 +786,7 @@ export default class CortexPlugin extends Plugin {
 				if (isHeic) {
 					if (!Platform.isDesktopApp) {
 						new Notice(
-							`Cortex: HEIC capture needs desktop (uses macOS's sips tool) - "${file.name}" left in inbox.`,
+							`Noggin: HEIC capture needs desktop (uses macOS's sips tool) - "${file.name}" left in inbox.`,
 							10000
 						);
 						return false;
@@ -796,7 +796,7 @@ export default class CortexPlugin extends Plugin {
 					} catch (e) {
 						const msg = e instanceof Error ? e.message : String(e);
 						new Notice(
-							`Cortex: HEIC conversion failed for "${file.name}" (needs macOS's sips tool) - see .cortex/pipeline.log`,
+							`Noggin: HEIC conversion failed for "${file.name}" (needs macOS's sips tool) - see .noggin/pipeline.log`,
 							10000
 						);
 						await this.appendLog(`ERROR: ${file.name} - HEIC conversion failed: ${msg}`);
@@ -904,7 +904,7 @@ export default class CortexPlugin extends Plugin {
 			return true;
 		} catch (e) {
 			if (e instanceof LlmApiError) {
-				new Notice(`Cortex API error (${e.status}) on "${file.name}" - see .cortex/pipeline.log`, 10000);
+				new Notice(`Noggin API error (${e.status}) on "${file.name}" - see .noggin/pipeline.log`, 10000);
 				await this.appendLog(`ERROR: ${file.name} - ${this.settings.apiProvider} API ${e.status}: ${e.body.slice(0, 300)}`);
 				return false;
 			}
@@ -971,7 +971,7 @@ export default class CortexPlugin extends Plugin {
 				}
 			} catch (e) {
 				const msg = e instanceof Error ? e.message : String(e);
-				new Notice(`Cortex: wiki build failed for "${cluster.tag}" - ${msg}`, 10000);
+				new Notice(`Noggin: wiki build failed for "${cluster.tag}" - ${msg}`, 10000);
 				await this.appendLog(`ERROR: wiki ${cluster.tag} - ${msg}`);
 			}
 		}
@@ -1086,12 +1086,12 @@ export default class CortexPlugin extends Plugin {
 	}
 }
 
-class CortexSettingTab extends PluginSettingTab {
-	plugin: CortexPlugin;
+class NogginSettingTab extends PluginSettingTab {
+	plugin: NogginPlugin;
 	// Provider whose model dropdown is showing the Custom field. Not persisted.
 	private customModelFor: ApiProvider | null = null;
 
-	constructor(app: App, plugin: CortexPlugin) {
+	constructor(app: App, plugin: NogginPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
 	}
@@ -1212,7 +1212,7 @@ class CortexSettingTab extends PluginSettingTab {
 				new Setting(containerEl)
 					.setName(`${providerLabel} API key`)
 					.setDesc(
-						"Stored locally in this vault's .obsidian/plugins/cortex/data.json - keep this vault out of any repo or sync you don't fully control."
+						"Stored locally in this vault's .obsidian/plugins/noggin/data.json - keep this vault out of any repo or sync you don't fully control."
 					)
 					.addText((text) => {
 						text.inputEl.type = "password";
@@ -1287,10 +1287,10 @@ class CortexSettingTab extends PluginSettingTab {
 				button.setButtonText("Test").onClick(async () => {
 					button.setButtonText("Testing…").setDisabled(true);
 					try {
-						new Notice(`Cortex: ${await this.plugin.testConnection()}`);
+						new Notice(`Noggin: ${await this.plugin.testConnection()}`);
 					} catch (e) {
 						const msg = e instanceof LlmApiError ? `${e.message} (HTTP ${e.status})` : e instanceof Error ? e.message : String(e);
-						new Notice(`Cortex: connection test failed - ${msg}`, 10000);
+						new Notice(`Noggin: connection test failed - ${msg}`, 10000);
 					} finally {
 						button.setButtonText("Test").setDisabled(false);
 					}
@@ -1339,7 +1339,7 @@ class CortexSettingTab extends PluginSettingTab {
 
 		containerEl.createEl("h3", { text: "Folders" });
 
-		const folderSetting = (key: keyof CortexSettings, name: string) => {
+		const folderSetting = (key: keyof NogginSettings, name: string) => {
 			new Setting(containerEl).setName(name).addText((text) =>
 				text.setValue(this.plugin.settings[key] as string).onChange(async (value) => {
 					(this.plugin.settings[key] as string) = value.trim();
@@ -1357,7 +1357,7 @@ class CortexSettingTab extends PluginSettingTab {
 
 // First-run setup: pick a mode, prove it works, watch a first enrichment.
 class OnboardingModal extends Modal {
-	constructor(app: App, private plugin: CortexPlugin) {
+	constructor(app: App, private plugin: NogginPlugin) {
 		super(app);
 	}
 
@@ -1371,9 +1371,9 @@ class OnboardingModal extends Modal {
 
 	private renderWelcome() {
 		this.clear();
-		this.setTitle("Welcome to Cortex");
+		this.setTitle("Welcome to Noggin");
 		this.contentEl.createEl("p", {
-			text: "Capture anything - a thought, a meeting, a photo, a voice memo - and Cortex turns it into a tagged, linked knowledge graph. One choice to make: how should Cortex think?",
+			text: "Capture anything - a thought, a meeting, a photo, a voice memo - and Noggin turns it into a tagged, linked knowledge graph. One choice to make: how should Noggin think?",
 		});
 
 		new Setting(this.contentEl)
@@ -1400,7 +1400,7 @@ class OnboardingModal extends Modal {
 
 		new Setting(this.contentEl)
 			.setName("Not now")
-			.setDesc("You can rerun this anytime: command palette → \"Cortex: Open setup wizard\".")
+			.setDesc("You can rerun this anytime: command palette → \"Noggin: Open setup wizard\".")
 			.addButton((b) =>
 				b.setButtonText("Skip").onClick(async () => {
 					this.plugin.settings.onboarded = true;
@@ -1487,8 +1487,8 @@ class OnboardingModal extends Modal {
 		const isCli = this.plugin.settings.executionMode === "cli";
 		this.contentEl.createEl("p", {
 			text: isCli
-				? "Cortex will check that Claude Code is installed and reachable. If you haven't installed it yet: docs.claude.com/claude-code (a one-time step)."
-				: "Cortex will make one tiny API call to confirm your key and model work.",
+				? "Noggin will check that Claude Code is installed and reachable. If you haven't installed it yet: docs.claude.com/claude-code (a one-time step)."
+				: "Noggin will make one tiny API call to confirm your key and model work.",
 		});
 		const status = this.contentEl.createEl("p", { text: "" });
 
@@ -1518,7 +1518,7 @@ class OnboardingModal extends Modal {
 			text: `Drop anything into "${this.plugin.settings.inboxFolder}" - text, images, PDFs, voice memos - and it comes out tagged, summarized, and linked in "${this.plugin.settings.meetingsFolder}".`,
 		});
 		this.contentEl.createEl("p", {
-			text: "Want to see it happen right now? Cortex can drop a sample note into the inbox and enrich it while you watch.",
+			text: "Want to see it happen right now? Noggin can drop a sample note into the inbox and enrich it while you watch.",
 		});
 
 		new Setting(this.contentEl)
@@ -1551,7 +1551,7 @@ class QuickCaptureModal extends Modal {
 	private text = "";
 	private attachedFile: File | null = null;
 
-	constructor(app: App, private plugin: CortexPlugin) {
+	constructor(app: App, private plugin: NogginPlugin) {
 		super(app);
 	}
 

@@ -106,7 +106,7 @@ export async function transcribeWithOpenAi(
 	filename: string,
 	model = OPENAI_TRANSCRIBE_MODEL
 ): Promise<string> {
-	const boundary = `cortex-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
+	const boundary = `noggin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 	const body = buildMultipartBody(
 		boundary,
 		{ model, response_format: "json" },

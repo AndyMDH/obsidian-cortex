@@ -85,6 +85,10 @@ export default class NogginPlugin extends Plugin {
 			new QuickCaptureModal(this.app, this).open();
 		});
 
+		this.addRibbonIcon("mic", "Noggin: toggle voice capture", () => {
+			void this.toggleVoiceCapture();
+		});
+
 		this.addCommand({
 			id: "setup-wizard",
 			name: "Open setup wizard",
@@ -104,7 +108,7 @@ export default class NogginPlugin extends Plugin {
 				callback: () => void this.toggleMeetingCapture(),
 			});
 
-			this.addRibbonIcon("mic", "Noggin: toggle meeting capture", () => {
+			this.addRibbonIcon("phone-call", "Noggin: toggle meeting capture", () => {
 				void this.toggleMeetingCapture();
 			});
 		}
@@ -520,6 +524,14 @@ export default class NogginPlugin extends Plugin {
 			);
 			return;
 		}
+		// The record command re-shows QuickRecorder's window even when it was
+		// hidden (e.g. by a login-time hide script) - give it a moment to
+		// render, then hide it again the same way, so the toggle stays silent.
+		setTimeout(() => {
+			void this.runAppleScript('tell application "System Events" to set visible of process "QuickRecorder" to false').catch(
+				() => {}
+			);
+		}, 800);
 		new Notice(wasRecording ? "Noggin: meeting recording stopped." : "Noggin: meeting recording started.");
 	}
 

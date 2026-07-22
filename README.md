@@ -50,17 +50,15 @@ Or jump straight to [Nous's page on Obsidian's site](https://obsidian.md/plugins
 question: Claude subscription, an API key, or a local model? Pick one, it
 tests the connection, done.
 
-**2. Capture something.** Four ways in, all in the left sidebar:
+**2. Capture something.** Four ways in, all in the left sidebar — 🎙️ and
+📞 both click to start, talk, click the same button again to stop:
 
-| | |
-|---|---|
-| ➕ | Type, paste, or attach a file — command palette → "Nous: Quick capture" |
-| 🎙️ | A voice note |
-| 📞 | Record a meeting (macOS) |
-| 📥 | Or just drop any file into `00-Inbox` |
-
-🎙️ and 📞 both work the same way — click to start, talk, click the same
-button to stop:
+| | | |
+|---|---|---|
+| ➕ | Type, paste, or attach a file | command palette → "Nous: Quick capture" |
+| 🎙️ | Voice note | click the mic |
+| 📞 | Meeting (macOS) | click the phone, or ⌥M — [one-time setup](examples/meeting-capture/) |
+| 📥 | Anything else | drop it straight into `00-Inbox` |
 
 <p align="center">
   <picture>
@@ -68,15 +66,6 @@ button to stop:
     <img alt="Click the mic or phone icon to start recording, talk, click it again to stop — a tagged note with the audio or transcript inside lands in your inbox." src="assets/capture-scenario-light.svg">
   </picture>
 </p>
-
-| | Extra setup | You get |
-|---|---|---|
-| 🎙️ Voice note | None | A tagged note, your recording kept inside |
-| 📞 Meeting (macOS) | [One-time, ~10 min](examples/meeting-capture/) | A `Me:` / `Them:` labeled transcript |
-
-Want live text as you talk instead of only after? Turn on **Live voice
-transcription (beta)** in Nous's settings — see
-[`docs/USAGE.md`](docs/USAGE.md#voice-capture-in-depth).
 
 **3. That's it.** Within seconds your capture is tagged, summarized, and
 linked to related notes in **`10-Notes`** — original text, image, or

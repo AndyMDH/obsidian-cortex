@@ -16,6 +16,7 @@ obsidian-nous/
 │   ├── openaiCompatible.ts # OpenAI-compatible adapter (OpenAI + Local)
 │   ├── gemini.ts           # Gemini API adapter
 │   ├── transcribe.ts       # Cloud audio transcription fallback (Gemini/OpenAI)
+│   ├── realtimeTranscribe.ts # Live/streaming dictation (OpenAI Realtime API, beta, opt-in)
 │   ├── cliRunner.ts        # Claude CLI arg builders, PATH helpers, log parsing
 │   └── skillTemplates.ts   # SKILL.md templates injected into .claude/skills/
 ├── test/                   # Node test-runner tests (no live API calls)
@@ -57,7 +58,8 @@ obsidian-nous/
 | `build-wikis` | `buildWikis()` — route to CLI or API wiki synthesis. |
 | `query-vault` | `runVaultQuery()` — CLI-only natural-language search. |
 | `quick-capture` | Opens `QuickCaptureModal`. |
-| `toggle-voice-capture` | Records from microphone; stops on second invocation. |
+| `toggle-voice-capture` | Records from microphone; stops on second invocation (or opens `LiveVoiceCaptureModal` instead, if live transcription is on). |
+| `toggle-meeting-capture` | Remote-controls QuickRecorder to start/stop a system-audio + mic recording (macOS only). |
 | `setup-wizard` | Opens `OnboardingModal`. |
 
 ### Auto-processing
@@ -85,7 +87,7 @@ Key types:
 
 - `NousSettings`: all user-configurable state, including execution mode, provider, API keys, models, folder names, thresholds, and onboarding flag.
 - `ExecutionMode`: `"api" | "cli"`.
-- `ApiProvider`: `"anthropic" | "openai" | "gemini" | "local"`.
+- `ApiProvider`: `"anthropic" | "openai" | "gemini" | "glm" | "local"`.
 - `EnrichResult`: structured output from the enrichment model.
 - `WikiSynthesisResult`: structured output from the wiki synthesis model.
 - `NoteIndexEntry`: compact metadata passed to the model for duplicate detection and related-note linking.
@@ -155,6 +157,19 @@ Audio transcription is provider-specific because not all LLM APIs support audio 
 
 In API mode, `processFile()` calls transcription before enrichment. In CLI mode, `transcribeInboxAudioForCli()` runs first and leaves a text note in the inbox for the skill to process.
 
+### `realtimeTranscribe.ts`
+
+Live/streaming dictation, opt-in and desktop-only (beta): while `toggleVoiceCapture()`'s `LiveVoiceCaptureModal` (`main.ts`) is recording, this module streams microphone audio to OpenAI's Realtime API over a WebSocket and surfaces incremental transcript text as it arrives, instead of waiting until the recording stops.
+
+Kept DOM-free and network-free at this level (no `WebSocket` import) so it's unit-testable under the plain Node test runner - `RealtimeTranscriber` takes an injected `wsFactory`; the real factory in `main.ts` lazily `import("ws")`s the npm `ws` package (bundled by esbuild, unlike the Node-builtin `child_process`/`fs`/`os`/`path` handled by `loadNodeModules()` - see the comment above `loadWsModule()` in `main.ts` for why that's a different lazy-loading trick).
+
+- `float32ToPcm16Base64()` / `downsampleTo()` - Web Audio's Float32 samples -> the base64 PCM16 wire format the Realtime API expects.
+- `buildTranscriptionSessionUpdate()` / `buildAppendAudioMessage()` - client event builders.
+- `parseRealtimeEvent()` - discriminated union over server events (`delta` / `completed` / `error` / `unknown`); unrecognized event types (e.g. `session.created`) are `unknown`, not errors.
+- `class RealtimeTranscriber` - owns one WebSocket connection: sends session config on open (model `gpt-4o-mini-transcribe`, `turn_detection: server_vad` with a widened `silence_duration_ms` so ordinary dictation pauses don't prematurely finalize a segment), forwards audio chunks, and dispatches `onPartial`/`onSegmentDone`/`onError`. Holds no transcript state itself - the modal accumulates segments.
+
+This is strictly a safety-net-backed addition: `LiveVoiceCaptureModal` always starts the existing, unmodified `MediaRecorder` first, and only layers the Realtime connection on top of it. Any live-transcription failure (connect timeout, mid-stream drop, no key, mobile) tears down just the WS/AudioWorklet/AudioContext side; the recording itself is untouched and falls through to the unchanged batch `transcribeAudio()` path below on stop.
+
 ### `cliRunner.ts`
 
 Pure helpers for CLI mode. No Obsidian dependency.
@@ -181,7 +196,7 @@ Folder names are interpolated from settings so the skills match the user's confi
 
 1. Read the inbox file.
 2. Convert HEIC to JPEG via macOS `sips` (desktop only).
-3. Transcribe audio if needed.
+3. Transcribe audio if needed - first checks the in-memory `liveTranscripts` map (path -> transcript, populated by `saveVoiceRecording()` when live transcription succeeded) and uses/deletes that entry if present, otherwise calls `transcribeAudio()` as before. `transcribeInboxAudioForCli()` does the same check before its own `transcribeAudio()` call.
 4. Build an attachment payload for images/PDFs (base64 + MIME type).
 5. Fetch the tag registry and a compact index of recent notes.
 6. Call `LlmProvider.callTool<EnrichResult>(...)` with the enrichment prompt.
@@ -221,14 +236,21 @@ Settings are persisted by Obsidian via `this.loadData()` / `this.saveData()` int
 | `apiProvider` | Active provider when `executionMode` is `"api"`. |
 | `apiKeys` | API keys for each provider (plain text in `data.json`). |
 | `models` | Model ID per provider. |
+| `glmBaseUrl` | Endpoint for GLM (Z.ai). |
 | `localBaseUrl` | Endpoint for local OpenAI-compatible servers. |
 | `claudeCliPath` | Path or command for the `claude` CLI. |
+| `whisperCliPath` / `whisperModelPath` | Local whisper.cpp binary/model paths for voice transcription (macOS). |
+| `liveTranscriptionEnabled` | Opt-in, desktop-only live/streaming dictation via OpenAI's Realtime API. |
+| `inboxFolder` / `meetingsFolder` / `wikisFolder` / `tagsFolder` / `queriesFolder` | Folder names for each layer - see `ARCHITECTURE.md`. |
 | `wikiThreshold` | Minimum non-fragment notes before a wiki is created. |
 | `dedupLookback` | Number of recent notes to include in the duplicate-detection index. |
 | `autoProcessOnCreate` | Whether to enrich new inbox files automatically. |
 | `onboarded` | Whether the first-run wizard has been completed. |
 
-The settings UI in `NousSettingTab` is built dynamically: it shows/hides fields based on execution mode and provider, and includes a **Test connection** button.
+The settings UI in `NousSettingTab` is built dynamically: it shows/hides fields
+based on execution mode and provider, includes a **Test connection** button,
+and hides rarely-touched fields (CLI/whisper paths, folder names, thresholds)
+behind an **Advanced settings** toggle - only the essentials show by default.
 
 ## Testing strategy
 

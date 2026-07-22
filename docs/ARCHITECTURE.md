@@ -23,10 +23,10 @@ Nous is organized into five layers. Each layer is a folder in the vault, and eac
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │  00-Inbox    →   10-Notes    →   30-Wikis                   │
-│   capture          enrich         synthesize                  │
-│     ↑                ↑                                        │
-│  20-Tags        40-Queries                                    │
-│  vocabulary       ask                                         │
+│   capture          enrich         synthesize                │
+│     ↑                ↑                                      │
+│  20-Tags        40-Queries                                  │
+│  vocabulary       ask                                       │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -47,7 +47,7 @@ The layers are strict: a file in `00-Inbox` is never a final note, a note in `10
 A capture lands in `00-Inbox` by one of several paths:
 
 - **Quick capture**: the user opens the quick-capture modal and types or attaches a file.
-- **Voice capture**: the plugin records from the microphone and drops a WebM/M4A file in the inbox.
+- **Voice capture**: the plugin records from the microphone and drops a WebM/M4A file in the inbox. Optionally (opt-in, desktop-only, beta), OpenAI's Realtime API streams an incremental transcript while recording is still in progress; when that succeeds, the known transcript is used directly and the batch transcription step below is skipped for that file. See `realtimeTranscribe.ts` in `docs/TECHNICAL.md`.
 - **Manual drop**: the user creates a file in `00-Inbox` directly, or a dictation tool writes there.
 - **Auto-process**: the plugin watches `create` events and enriches new inbox files after a short settle delay.
 
@@ -209,3 +209,4 @@ User input
 - In **Local mode**, nothing leaves the machine.
 - API keys are stored in Obsidian's plugin data file (`data.json`) inside the vault, in plain text. Do not sync the vault to untrusted locations.
 - No telemetry is collected by the plugin.
+- **Live voice transcription (beta)** is opt-in and off by default. When enabled, it sends microphone audio to OpenAI's Realtime API over a WebSocket - the same OpenAI network surface (and the same `apiKeys.openai` key) already used for Gemini/OpenAI batch transcription fallback, not a new one. Users who leave it off, or who have no OpenAI key, see no behavior change and no new network surface at all.

@@ -43,42 +43,63 @@ tests the connection, done.
 | | |
 |---|---|
 | ➕ | Type, paste, or attach a file — command palette → "Nous: Quick capture" |
-| 🎙️ | A voice note — see below |
-| 📞 | Record a meeting (macOS) — see below |
+| 🎙️ | A voice note |
+| 📞 | Record a meeting (macOS) |
 | 📥 | Or just drop any file into `00-Inbox` |
 
-**🎙️ Voice note** — same button starts and stops it:
+🎙️ and 📞 both work the same way — click to start, talk, click the same
+button to stop:
 
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/voice-scenario-dark.svg">
-  <img alt="Click the mic icon to start recording, talk, click it again to stop — a tagged voice note with the audio inside lands in your inbox." src="assets/voice-scenario-light.svg">
+  <source media="(prefers-color-scheme: dark)" srcset="assets/capture-scenario-dark.svg">
+  <img alt="Click the mic or phone icon to start recording, talk, click it again to stop — a tagged note with the audio or transcript inside lands in your inbox." src="assets/capture-scenario-light.svg">
 </picture>
 
-**📞 Meeting** — click when it starts, click again when it ends (or use
-QuickRecorder's own ⌥M hotkey, same result — one-time setup in
-[`examples/meeting-capture/`](examples/meeting-capture/)):
+| | Extra setup | You get |
+|---|---|---|
+| 🎙️ Voice note | None | A tagged note, your recording kept inside |
+| 📞 Meeting (macOS) | [One-time, ~10 min](examples/meeting-capture/) | A `Me:` / `Them:` labeled transcript |
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/meeting-scenario-dark.svg">
-  <img alt="Click the phone icon when a meeting starts, click it again when it ends — a speaker-labeled transcript lands in your inbox." src="assets/meeting-scenario-light.svg">
-</picture>
+Want live text as you talk instead of only after? **Live voice transcription
+(beta)**, in Nous's settings — see
+[`docs/USAGE.md`](docs/USAGE.md#voice-capture-in-depth).
 
 **3. That's it.** Within seconds your capture is tagged, summarized, and
 linked to related notes in **`10-Notes`** — original text, image, or
 recording kept inside. Topics with 4+ notes get their own wiki page in
 **`30-Wikis`** automatically.
 
+## How it works, briefly
+
+- **Transcription is local by default** — [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+  runs on your Mac; voice never leaves it. Falls back to a Gemini/OpenAI key
+  if that's not installed.
+- **Meetings** are captured via [QuickRecorder](https://github.com/lihaoyun6/QuickRecorder)
+  recording system audio and your mic as two separate tracks, transcribed
+  independently, then interleaved by timestamp into `Me:` / `Them:` dialogue.
+- **Limitation**: group calls lump every other participant into one `Them:`
+  speaker — there's no per-person diarization.
+- **Limitation**: meeting capture is macOS-only; live voice transcription
+  (beta) is OpenAI-only and desktop-only.
+
+Full pipeline detail → [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
+
 ## Good to know
 
 - **Obsidian must be open** for captures to process — they wait in
   `00-Inbox` until it is.
 - **Privacy**: only your captured notes and tag names are ever sent to the
-  provider you chose. Local mode (Claude Code CLI, a local model, or local
-  whisper.cpp for voice) sends nothing anywhere. No telemetry, ever.
+  provider you chose. Local mode sends nothing anywhere. No telemetry, ever.
 - **Mobile**: use Direct API key mode — Claude Code CLI is desktop-only.
+- **Settings** show just the essentials by default — CLI/whisper paths,
+  folder names, and tuning thresholds are one click away under **Advanced
+  settings**, since defaults work for almost everyone.
 
-Full setup options (every provider, hotkeys, troubleshooting) and how the
-pipeline works internally → **[`docs/USAGE.md`](docs/USAGE.md)**.
+New to Nous and want a slower, hand-holding walkthrough of your first hour
+with it → **[`docs/TUTORIAL.md`](docs/TUTORIAL.md)**.
+
+Full setup options (every provider, hotkeys, troubleshooting) →
+**[`docs/USAGE.md`](docs/USAGE.md)**.
 
 ## For developers
 

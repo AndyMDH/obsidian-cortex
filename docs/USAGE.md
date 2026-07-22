@@ -52,6 +52,8 @@ sidebar. One choice to make:
 
 Everything else has a sensible default, and a **Test connection** button in
 the same panel confirms your choice works before you capture anything.
+Rarely-touched fields — CLI/whisper paths, folder names, tuning thresholds —
+are hidden behind an **Advanced settings** toggle at the bottom of the panel.
 
 ## Every way to capture
 
@@ -78,12 +80,30 @@ capture", give it a key — same command, your choice which trigger you use.
 Any audio file dropped in `00-Inbox` also works, including recordings made
 in the Obsidian **mobile** app on the go.
 
+**Live voice transcription (beta)** — **Settings → Nous → Live voice
+transcription (beta)**, off by default. Turn it on (with an OpenAI API key
+set) and the same 🎙️ mic icon opens a small window instead: the transcript
+grows on screen while you talk, Siri-style, rather than only appearing after
+you click Stop. Click **Stop** to finish and save (same inbox → note
+pipeline as always), or **Cancel** to explicitly discard the recording — no
+file is created. Closing the window with Esc or a click outside is treated
+the same as Stop, not a silent discard.
+
+This is desktop-only (uses OpenAI's Realtime API over a Node WebSocket,
+which needs Electron's Node integration) and needs an OpenAI key — without
+either, the toggle simply has no effect and the mic icon behaves exactly as
+before. The same is true if a live connection never starts or drops
+mid-recording: the underlying recording keeps going regardless, and once you
+stop, it's transcribed by the normal batch pipeline (local whisper.cpp, or
+Gemini/OpenAI) exactly as if live mode had never been turned on — a capture
+is never lost because live transcription had trouble.
+
 Transcription (speech → text) prefers **local whisper.cpp** on macOS if
 `whisper-cli` and a model are installed (`brew install whisper-cpp`, path
-configurable in Nous's settings) — nothing leaves your machine, no API key
-needed. Without that set up, it falls back to a **Gemini or OpenAI** API key
-in Nous's settings, even in Claude Code or GLM mode, where it's used *only*
-for transcription (Claude and GLM have no audio API yet).
+configurable under Nous's **Advanced settings**) — nothing leaves your
+machine, no API key needed. Without that set up, it falls back to a **Gemini
+or OpenAI** API key in Nous's settings, even in Claude Code or GLM mode, where
+it's used *only* for transcription (Claude and GLM have no audio API yet).
 
 <details>
 <summary><strong>Power option: a system-wide dictation hotkey</strong></summary>
@@ -163,9 +183,9 @@ Every step is logged to `.nous/pipeline.log` in the vault.
 
 - **Nothing happened?** Command palette → "Nous: Process inbox now" and
   watch for an error notification.
-- **"Claude not found" (CLI mode)?** Run `which claude` in Terminal and
-  paste the result into the **Claude CLI path** field in Obsidian's Nous
-  settings.
+- **"Claude not found" (CLI mode)?** Run `which claude` in Terminal, then
+  Obsidian's Nous settings → turn on **Advanced settings** → paste the
+  result into **Claude CLI path**.
 - **Logs**: `.nous/pipeline.log` (hidden file in your vault) records every
   run and error.
 

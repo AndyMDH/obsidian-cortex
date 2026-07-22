@@ -16,6 +16,13 @@ export interface NousSettings {
 	// in main.ts. Falls back to the Gemini/OpenAI key below when unavailable.
 	whisperCliPath: string;
 	whisperModelPath: string;
+	// Opt-in, desktop-only live/streaming dictation via OpenAI's Realtime
+	// API (see src/realtimeTranscribe.ts) - reuses apiKeys.openai, no
+	// separate key. Solo voice-note capture only; meeting capture
+	// (QuickRecorder-based) is unaffected. Default off: this is strictly
+	// additive on top of the existing local-whisper/batch pipeline, which
+	// stays the safety net whenever this is off, unavailable, or fails.
+	liveTranscriptionEnabled: boolean;
 	inboxFolder: string;
 	meetingsFolder: string;
 	wikisFolder: string;
@@ -70,6 +77,7 @@ export const DEFAULT_SETTINGS: NousSettings = {
 	claudeCliPath: "claude",
 	whisperCliPath: "whisper-cli",
 	whisperModelPath: "",
+	liveTranscriptionEnabled: false,
 	inboxFolder: "00-Inbox",
 	meetingsFolder: "10-Notes",
 	wikisFolder: "30-Wikis",

@@ -28,6 +28,14 @@ const context = await esbuild.context({
     "@lezer/common",
     "@lezer/highlight",
     "@lezer/lr",
+    // ws (used for live/streaming voice transcription, see
+    // src/realtimeTranscribe.ts) guards its optional native accelerators
+    // with try/catch require() - these two must stay unbundled or esbuild
+    // fails trying to resolve native addons that aren't actually installed.
+    // ws falls back to its pure-JS implementation automatically when
+    // they're absent; a standard pattern for bundling ws with esbuild.
+    "bufferutil",
+    "utf-8-validate",
     ...builtinModules,
   ],
   format: "cjs",

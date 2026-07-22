@@ -11,6 +11,7 @@ import {
 	requestUrl,
 	setIcon,
 	type SettingDefinitionItem,
+	type SettingGroup,
 } from "obsidian";
 import type { ApiProvider, NousSettings, EnrichResult, NoteIndexEntry, WikiSynthesisResult } from "./src/types";
 import { DEFAULT_SETTINGS, MODEL_OPTIONS } from "./src/types";
@@ -36,6 +37,7 @@ import {
 	transcribeWithOpenAi,
 	type HttpPostBinary,
 } from "./src/transcribe";
+import { RealtimeTranscriber, type RealtimeSocket } from "./src/realtimeTranscribe";
 import { augmentedPath, buildEnrichArgs, buildQueryArgs, buildWikiArgs, summarizeLogLines } from "./src/cliRunner";
 import type { CliExec } from "./src/cliRunner";
 import { meetingEnricherSkill, vaultQuerySkill, wikiBuilderSkill } from "./src/skillTemplates";
@@ -105,6 +107,23 @@ function loadNodeModules(): Promise<NodeModules> {
 	return nodeModulesPromise;
 }
 
+// "ws" (live/streaming voice transcription - see src/realtimeTranscribe.ts)
+// is different from the modules above: it's an npm package, not a Node
+// builtin, so window.require("ws") would fail (nothing ships a
+// node_modules/ws alongside main.js in an installed plugin). Instead it's
+// bundled straight into main.js by esbuild (deliberately left out of the
+// `external` array), so a dynamic import() of it resolves against the
+// bundle's own internal module registry rather than a real specifier - safe
+// even though a dynamic import() of an actual Node builtin like
+// child_process is not (see the comment above). Still loaded lazily and only
+// from the desktop-gated live-transcription path, same spirit as
+// loadNodeModules(): nothing pulls this in on mobile.
+let wsModulePromise: Promise<typeof import("ws")> | null = null;
+function loadWsModule(): Promise<typeof import("ws")> {
+	if (!wsModulePromise) wsModulePromise = import("ws");
+	return wsModulePromise;
+}
+
 export default class NousPlugin extends Plugin {
 	settings: NousSettings;
 	private inFlight = new Set<string>();
@@ -116,6 +135,15 @@ export default class NousPlugin extends Plugin {
 	private meetingRibbonEl: HTMLElement | null = null;
 	private meetingStatusBarEl: HTMLElement | null = null;
 	private meetingPollInterval: number | null = null;
+	// Live transcripts already known by the time a voice recording is saved
+	// (see saveVoiceRecording()) - checked by processFile()/
+	// transcribeInboxAudioForCli() so a known transcript skips the batch
+	// transcribeAudio() call entirely. Keyed by vault path, one-shot: read
+	// and deleted by whichever pipeline branch consumes it.
+	private liveTranscripts = new Map<string, string>();
+	// Not private: LiveVoiceCaptureModal clears this on its own onClose (all
+	// close paths - Stop, Cancel, Esc/click-outside - route through there).
+	liveCaptureModal: LiveVoiceCaptureModal | null = null;
 
 	async onload() {
 		await this.loadSettings();
@@ -535,7 +563,9 @@ export default class NousPlugin extends Plugin {
 		);
 	}
 
-	private async appendLog(message: string) {
+	// Not private: LiveVoiceCaptureModal logs live-transcription failures
+	// here too, same ERROR-line convention as the rest of the pipeline.
+	async appendLog(message: string) {
 		const line = `${new Date().toISOString()} ${message}\n`;
 		if (!(await this.app.vault.adapter.exists(LOG_FOLDER))) {
 			await this.app.vault.createFolder(LOG_FOLDER);
@@ -609,6 +639,19 @@ export default class NousPlugin extends Plugin {
 	// finished recording lands in the inbox and flows through the normal
 	// audio pipeline (transcribe -> enrich).
 	async toggleVoiceCapture() {
+		if (this.liveCaptureModal) {
+			void this.liveCaptureModal.stopAndClose();
+			return;
+		}
+		// Beta live-transcription path (opt-in, desktop-only, needs an
+		// OpenAI key - see canUseLiveTranscription()): a modal owns its own
+		// getUserMedia/MediaRecorder lifecycle, so the headless path below
+		// is untouched and remains the fallback for everyone else.
+		if (this.canUseLiveTranscription()) {
+			this.liveCaptureModal = new LiveVoiceCaptureModal(this.app, this);
+			this.liveCaptureModal.open();
+			return;
+		}
 		if (this.voiceRecorder?.state === "recording") {
 			this.voiceRecorder.stop();
 			return;
@@ -630,19 +673,7 @@ export default class NousPlugin extends Plugin {
 			this.voiceStream = null;
 			this.voiceRecorder = null;
 			this.setVoiceRecordingIndicator(false);
-			void (async () => {
-				const mime = recorder.mimeType || "audio/webm";
-				const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
-				const buffer = await new Blob(chunks, { type: mime }).arrayBuffer();
-				await this.ensureFolderExists(this.settings.inboxFolder);
-				const stamp = window.moment().format("YYYY-MM-DD HH.mm.ss");
-				await this.app.vault.createBinary(
-					`${this.settings.inboxFolder}/${stamp} Voice note.${ext}`,
-					buffer
-				);
-				new Notice("Nous: voice note captured.");
-				if (!this.settings.autoProcessOnCreate) void this.processInbox();
-			})();
+			void this.saveVoiceRecording(recorder.mimeType || "audio/webm", chunks);
 		};
 		recorder.start();
 		this.voiceRecorder = recorder;
@@ -650,10 +681,39 @@ export default class NousPlugin extends Plugin {
 		new Notice("Nous: recording - press the hotkey again to stop.");
 	}
 
+	// Only true when every fallback condition is satisfied: opt-in toggle,
+	// an OpenAI key (Realtime API only, reuses apiKeys.openai), and desktop
+	// (browser WebSocket can't set an Authorization header - see
+	// src/realtimeTranscribe.ts's header comment - so this needs the same
+	// Node "ws" + nodeIntegration trick as CLI mode and local whisper.cpp,
+	// neither of which exist on mobile). Any false here means the ribbon
+	// falls straight through to the unchanged headless path above.
+	private canUseLiveTranscription(): boolean {
+		return this.settings.liveTranscriptionEnabled && !!this.settings.apiKeys.openai && Platform.isDesktopApp;
+	}
+
+	// Shared by the headless recorder above and LiveVoiceCaptureModal below,
+	// so both produce an identical saved file. `transcript`, when present
+	// (live transcription succeeded), is recorded into liveTranscripts right
+	// after createBinary so processFile()/transcribeInboxAudioForCli() can
+	// skip the batch transcribeAudio() call for this file.
+	async saveVoiceRecording(mime: string, chunks: Blob[], transcript?: string): Promise<void> {
+		const ext = mime.includes("mp4") ? "m4a" : mime.includes("ogg") ? "ogg" : "webm";
+		const buffer = await new Blob(chunks, { type: mime }).arrayBuffer();
+		await this.ensureFolderExists(this.settings.inboxFolder);
+		const stamp = window.moment().format("YYYY-MM-DD HH.mm.ss");
+		const path = `${this.settings.inboxFolder}/${stamp} Voice note.${ext}`;
+		await this.app.vault.createBinary(path, buffer);
+		if (transcript?.trim()) this.liveTranscripts.set(path, transcript.trim());
+		new Notice("Nous: voice note captured.");
+		if (!this.settings.autoProcessOnCreate) void this.processInbox();
+	}
+
 	// Recording previously had no persistent signal once the start Notice
 	// faded - swap the ribbon icon and show a status-bar item for as long as
-	// the mic is actually live.
-	private setVoiceRecordingIndicator(recording: boolean) {
+	// the mic is actually live. Also used by LiveVoiceCaptureModal, so it's
+	// not private.
+	setVoiceRecordingIndicator(recording: boolean) {
 		if (this.voiceRibbonEl) {
 			setIcon(this.voiceRibbonEl, recording ? "circle-stop" : "mic");
 			this.voiceRibbonEl.toggleClass("nous-recording", recording);
@@ -874,9 +934,16 @@ export default class NousPlugin extends Plugin {
 		);
 		for (const file of audioFiles) {
 			try {
-				const binary = await this.app.vault.readBinary(file);
-				if (binary.byteLength === 0) continue;
-				const transcript = await this.transcribeAudio(file.extension.toLowerCase(), binary, file.name);
+				const liveTranscript = this.liveTranscripts.get(file.path);
+				let transcript: string;
+				if (liveTranscript !== undefined) {
+					this.liveTranscripts.delete(file.path);
+					transcript = liveTranscript;
+				} else {
+					const binary = await this.app.vault.readBinary(file);
+					if (binary.byteLength === 0) continue;
+					transcript = await this.transcribeAudio(file.extension.toLowerCase(), binary, file.name);
+				}
 				const notePath = `${this.settings.inboxFolder}/${file.basename} (voice).md`;
 				const audioDest = `${this.settings.meetingsFolder}/${file.name}`;
 				await this.app.vault.create(
@@ -1098,10 +1165,16 @@ export default class NousPlugin extends Plugin {
 					base64Data: logic.arrayBufferToBase64(binary),
 				};
 			} else if (isAudio) {
-				const binary = await this.app.vault.readBinary(file);
-				if (binary.byteLength === 0) return false;
-				// Transcript goes through the normal text-enrichment path.
-				raw = await this.transcribeAudio(ext, binary, file.name);
+				const liveTranscript = this.liveTranscripts.get(file.path);
+				if (liveTranscript !== undefined) {
+					this.liveTranscripts.delete(file.path);
+					raw = liveTranscript;
+				} else {
+					const binary = await this.app.vault.readBinary(file);
+					if (binary.byteLength === 0) return false;
+					// Transcript goes through the normal text-enrichment path.
+					raw = await this.transcribeAudio(ext, binary, file.name);
+				}
 			} else {
 				raw = await this.app.vault.read(file);
 				if (raw.trim().length === 0) return false;
@@ -1367,10 +1440,54 @@ class NousSettingTab extends PluginSettingTab {
 	plugin: NousPlugin;
 	// Provider whose model dropdown is showing the Custom field. Not persisted.
 	private customModelFor: ApiProvider | null = null;
+	// Whether rarely-touched fields (CLI paths, folder names, thresholds) are
+	// shown. View-only, not persisted - resets to collapsed each time the
+	// tab is reopened, same as customModelFor above.
+	private showAdvanced = false;
 
 	constructor(app: App, plugin: NousPlugin) {
 		super(app, plugin);
 		this.plugin = plugin;
+	}
+
+	// Obsidian's declarative getSettingDefinitions() API (below) only exists
+	// since 1.13.0 - manifest.json's minAppVersion says 1.13.0, but BRAT
+	// installs skip that check, and 1.13.0 is a preview/insider release as of
+	// mid-2026 (1.12.7 is current stable), so most installs are still on a
+	// runtime that has no working SettingTab.display()/update() at all and
+	// throws "e.display is not a function" the moment the tab opens. This
+	// display() is a plain fallback that renders the same definitions
+	// imperatively. On 1.13.0+, per Obsidian's own docs, display() is simply
+	// never called once getSettingDefinitions() returns a non-empty array, so
+	// this sits inert there and the native declarative rendering (search,
+	// keyboard nav) is untouched.
+	display(): void {
+		this.containerEl.empty();
+		// None of this class's render callbacks use the group param below -
+		// avoid constructing a real SettingGroup (Obsidian 1.11.0+ only) so
+		// this fallback keeps working on the older versions it exists for.
+		const group = undefined as unknown as SettingGroup;
+		for (const item of this.getSettingDefinitions()) {
+			if (!("render" in item) || typeof item.render !== "function") continue;
+			const setting = new Setting(this.containerEl);
+			if (item.name) setting.setName(item.name);
+			if (item.desc) setting.setDesc(item.desc);
+			item.render(setting, group);
+		}
+	}
+
+	// Same story: this class's `render` callbacks call `this.update()` after
+	// a change that should re-render (e.g. switching execution mode reveals
+	// different fields below it). On 1.13.0+, defer to the real inherited
+	// update() (search indexing etc.); pre-1.13.0 it doesn't exist, so fall
+	// back to a plain re-render via display() above.
+	update(): void {
+		const inherited = (Object.getPrototypeOf(NousSettingTab.prototype) as { update?: () => void }).update;
+		if (typeof inherited === "function") {
+			inherited.call(this);
+		} else {
+			this.display();
+		}
 	}
 
 	getSettingDefinitions(): SettingDefinitionItem[] {
@@ -1412,7 +1529,21 @@ class NousSettingTab extends PluginSettingTab {
 			});
 		}
 
-		if (this.plugin.settings.executionMode === "cli") {
+		items.push({
+			name: "Advanced settings",
+			render: (setting) => {
+				setting
+					.setDesc("CLI/whisper paths, folder names, and tuning thresholds - defaults work for almost everyone.")
+					.addToggle((toggle) =>
+						toggle.setValue(this.showAdvanced).onChange((value) => {
+							this.showAdvanced = value;
+							this.update();
+						})
+					);
+			},
+		});
+
+		if (this.plugin.settings.executionMode === "cli" && this.showAdvanced) {
 			items.push({
 				name: "Claude CLI path",
 				render: (setting) => {
@@ -1431,7 +1562,8 @@ class NousSettingTab extends PluginSettingTab {
 						);
 				},
 			});
-		} else {
+		}
+		if (this.plugin.settings.executionMode !== "cli") {
 			const provider = this.plugin.settings.apiProvider;
 			const providerLabel = {
 				anthropic: "Anthropic",
@@ -1629,43 +1761,45 @@ class NousSettingTab extends PluginSettingTab {
 			},
 		});
 
-		items.push({
-			name: "Wiki threshold",
-			render: (setting) => {
-				setting
-					.setDesc("Number of non-fragment meeting notes a tag needs before a wiki hub page is created for it.")
-					.addText((text) =>
-						text.setValue(String(this.plugin.settings.wikiThreshold)).onChange(async (value) => {
-							const n = parseInt(value, 10);
-							if (!Number.isNaN(n) && n > 0) {
-								this.plugin.settings.wikiThreshold = n;
-								await this.plugin.saveSettings();
-							}
-						})
-					);
-			},
-		});
-
-		if (this.plugin.settings.executionMode === "api") {
-			// CLI mode's duplicate check lives in the skill - nothing to configure here.
+		if (this.showAdvanced) {
 			items.push({
-				name: "Duplicate-check lookback",
+				name: "Wiki threshold",
 				render: (setting) => {
 					setting
-						.setDesc(
-							"How many of the most recent meeting notes to compare new captures against for duplicates and related-note linking."
-						)
+						.setDesc("Number of non-fragment meeting notes a tag needs before a wiki hub page is created for it.")
 						.addText((text) =>
-							text.setValue(String(this.plugin.settings.dedupLookback)).onChange(async (value) => {
+							text.setValue(String(this.plugin.settings.wikiThreshold)).onChange(async (value) => {
 								const n = parseInt(value, 10);
 								if (!Number.isNaN(n) && n > 0) {
-									this.plugin.settings.dedupLookback = n;
+									this.plugin.settings.wikiThreshold = n;
 									await this.plugin.saveSettings();
 								}
 							})
 						);
 				},
 			});
+
+			if (this.plugin.settings.executionMode === "api") {
+				// CLI mode's duplicate check lives in the skill - nothing to configure here.
+				items.push({
+					name: "Duplicate-check lookback",
+					render: (setting) => {
+						setting
+							.setDesc(
+								"How many of the most recent meeting notes to compare new captures against for duplicates and related-note linking."
+							)
+							.addText((text) =>
+								text.setValue(String(this.plugin.settings.dedupLookback)).onChange(async (value) => {
+									const n = parseInt(value, 10);
+									if (!Number.isNaN(n) && n > 0) {
+										this.plugin.settings.dedupLookback = n;
+										await this.plugin.saveSettings();
+									}
+								})
+							);
+					},
+				});
+			}
 		}
 
 		items.push({
@@ -1679,73 +1813,102 @@ class NousSettingTab extends PluginSettingTab {
 			render: (setting) => {
 				setting
 					.setDesc(
-						"Transcribing a voice memo (Nous: Toggle voice capture) prefers local whisper.cpp when it's installed, so no audio ever leaves this machine. Falls back to a Gemini/OpenAI API key above if local isn't set up."
+						"Voice memos transcribe on-device by default via whisper.cpp - free, private, no API key. Falls back to the Gemini/OpenAI key above if that's not installed."
 					)
 					.setClass("setting-item-description");
 			},
 		});
 
 		items.push({
-			name: "Whisper CLI path",
+			name: "Live voice transcription (beta)",
 			render: (setting) => {
 				setting
 					.setDesc(
-						'Command or full path to whisper-cli (for example, installed via "brew install whisper-cpp"). macOS only.'
+						"Shows your words as you talk, Siri-style, instead of only after you stop. OpenAI-only for now - the only supported provider that streams your own speech live. Desktop only, reuses the OpenAI key above. Falls back to normal recording if unavailable or interrupted - nothing is lost."
 					)
-					.addText((text) =>
-						text
-							.setPlaceholder(DEFAULT_WHISPER_CLI_BIN)
-							.setValue(this.plugin.settings.whisperCliPath)
-							.onChange(async (value) => {
-								this.plugin.settings.whisperCliPath = value.trim() || DEFAULT_WHISPER_CLI_BIN;
-								await this.plugin.saveSettings();
-							})
+					.addToggle((toggle) =>
+						toggle.setValue(this.plugin.settings.liveTranscriptionEnabled).onChange(async (value) => {
+							this.plugin.settings.liveTranscriptionEnabled = value;
+							await this.plugin.saveSettings();
+							this.update();
+						})
 					);
 			},
 		});
+		if (this.plugin.settings.liveTranscriptionEnabled && !this.plugin.settings.apiKeys.openai) {
+			items.push({
+				name: "",
+				render: (setting) => {
+					setting
+						.setDesc("Needs an OpenAI API key above - until then, voice capture works normally (non-live).")
+						.setClass("mod-warning");
+				},
+			});
+		}
 
-		items.push({
-			name: "Whisper model path",
-			render: (setting) => {
-				setting
-					.setDesc(
-						`Full path to a ggml whisper model file. Leave blank to use the default location (${this.plugin.defaultWhisperModelPath()}).`
-					)
-					.addText((text) =>
-						text
-							.setPlaceholder(this.plugin.defaultWhisperModelPath())
-							.setValue(this.plugin.settings.whisperModelPath)
-							.onChange(async (value) => {
-								this.plugin.settings.whisperModelPath = value.trim();
-								await this.plugin.saveSettings();
-							})
+		if (this.showAdvanced) {
+			items.push({
+				name: "Whisper CLI path",
+				render: (setting) => {
+					setting
+						.setDesc(
+							'Command or full path to whisper-cli, the local transcription engine (for example, installed via "brew install whisper-cpp"). macOS only.'
+						)
+						.addText((text) =>
+							text
+								.setPlaceholder(DEFAULT_WHISPER_CLI_BIN)
+								.setValue(this.plugin.settings.whisperCliPath)
+								.onChange(async (value) => {
+									this.plugin.settings.whisperCliPath = value.trim() || DEFAULT_WHISPER_CLI_BIN;
+									await this.plugin.saveSettings();
+								})
+						);
+				},
+			});
+
+			items.push({
+				name: "Whisper model path",
+				render: (setting) => {
+					setting
+						.setDesc(
+							`Full path to a ggml whisper model file. Leave blank to use the default location (${this.plugin.defaultWhisperModelPath()}).`
+						)
+						.addText((text) =>
+							text
+								.setPlaceholder(this.plugin.defaultWhisperModelPath())
+								.setValue(this.plugin.settings.whisperModelPath)
+								.onChange(async (value) => {
+									this.plugin.settings.whisperModelPath = value.trim();
+									await this.plugin.saveSettings();
+								})
+						);
+				},
+			});
+
+			items.push({
+				name: "Folders",
+				render: (setting) => {
+					setting.setHeading();
+				},
+			});
+
+			const folderSetting = (key: keyof NousSettings, name: string): SettingDefinitionItem => ({
+				name,
+				render: (setting) => {
+					setting.addText((text) =>
+						text.setValue(this.plugin.settings[key] as string).onChange(async (value) => {
+							(this.plugin.settings[key] as string) = value.trim();
+							await this.plugin.saveSettings();
+						})
 					);
-			},
-		});
-
-		items.push({
-			name: "Folders",
-			render: (setting) => {
-				setting.setHeading();
-			},
-		});
-
-		const folderSetting = (key: keyof NousSettings, name: string): SettingDefinitionItem => ({
-			name,
-			render: (setting) => {
-				setting.addText((text) =>
-					text.setValue(this.plugin.settings[key] as string).onChange(async (value) => {
-						(this.plugin.settings[key] as string) = value.trim();
-						await this.plugin.saveSettings();
-					})
-				);
-			},
-		});
-		items.push(folderSetting("inboxFolder", "Inbox folder"));
-		items.push(folderSetting("meetingsFolder", "Meetings folder"));
-		items.push(folderSetting("wikisFolder", "Wikis folder"));
-		items.push(folderSetting("tagsFolder", "Tags folder"));
-		items.push(folderSetting("queriesFolder", "Queries folder"));
+				},
+			});
+			items.push(folderSetting("inboxFolder", "Inbox folder"));
+			items.push(folderSetting("meetingsFolder", "Meetings folder"));
+			items.push(folderSetting("wikisFolder", "Wikis folder"));
+			items.push(folderSetting("tagsFolder", "Tags folder"));
+			items.push(folderSetting("queriesFolder", "Queries folder"));
+		}
 
 		return items;
 	}
@@ -1988,6 +2151,225 @@ class QuickCaptureModal extends Modal {
 			.addButton((b) => b.setButtonText("Capture").setCta().onClick(() => void submit()));
 
 		input.focus();
+	}
+}
+
+// Live/streaming dictation - Siri-style: transcript text grows while the
+// user is still talking, instead of only appearing after Stop. Layered
+// strictly on top of the same MediaRecorder capture toggleVoiceCapture()
+// already uses: the recorder starts first and keeps running unconditionally
+// as the safety net, so if the OpenAI Realtime side never connects, drops
+// mid-recording, or errors, the recording itself is never at risk - stop
+// still produces a normal saved file that falls through to the unchanged
+// batch transcription pipeline exactly as if this modal had never opened.
+class LiveVoiceCaptureModal extends Modal {
+	private stream: MediaStream | null = null;
+	private recorder: MediaRecorder | null = null;
+	private chunks: Blob[] = [];
+	private audioCtx: AudioContext | null = null;
+	private workletNode: AudioWorkletNode | null = null;
+	private transcriber: RealtimeTranscriber | null = null;
+	// Finalized segments (server VAD committed them) plus whatever partial
+	// text is still in flight for the current, not-yet-committed segment.
+	private segments: string[] = [];
+	private partial = "";
+	// Set once Stop/Cancel/onClose has been handled, so the three
+	// overlapping close paths (button, Esc/click-outside triggering
+	// onClose, stopAndClose() calling this.close() which re-triggers
+	// onClose) run the stop/save logic exactly once.
+	private handled = false;
+	// Set when the live connection drops mid-recording after some segments
+	// were already committed - forces stopAndClose() to discard those
+	// partial segments and let the batch pipeline re-transcribe the full
+	// recording, instead of silently saving a transcript truncated at the
+	// drop point (see onError below).
+	private liveDropped = false;
+	private statusEl: HTMLElement | null = null;
+	private transcriptEl: HTMLElement | null = null;
+
+	constructor(app: App, private plugin: NousPlugin) {
+		super(app);
+	}
+
+	onOpen() {
+		this.setTitle("Live voice capture (beta)");
+		this.statusEl = this.contentEl.createEl("p", { text: "Starting…", cls: "setting-item-description" });
+		this.transcriptEl = this.contentEl.createDiv({ text: "Listening…" });
+		this.transcriptEl.setCssStyles({ minHeight: "4em", whiteSpace: "pre-wrap" });
+
+		new Setting(this.contentEl)
+			.addButton((b) => b.setButtonText("Cancel").onClick(() => void this.cancel()))
+			.addButton((b) => b.setButtonText("Stop").setCta().onClick(() => void this.stopAndClose()));
+
+		void this.start();
+	}
+
+	private renderTranscript() {
+		const text = [...this.segments, this.partial].filter(Boolean).join(" ");
+		this.transcriptEl?.setText(text || "Listening…");
+	}
+
+	private async start() {
+		try {
+			this.stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+		} catch {
+			new Notice("Nous: microphone access denied - allow it for Obsidian in system settings.", 8000);
+			this.close();
+			return;
+		}
+
+		// The existing, unmodified MediaRecorder path - starts first and
+		// independently of the live-transcription setup below.
+		const mimeType = pickVoiceMimeType();
+		const recorder = mimeType ? new MediaRecorder(this.stream, { mimeType }) : new MediaRecorder(this.stream);
+		recorder.ondataavailable = (e) => {
+			if (e.data.size > 0) this.chunks.push(e.data);
+		};
+		recorder.start();
+		this.recorder = recorder;
+		this.plugin.setVoiceRecordingIndicator(true);
+
+		try {
+			await this.startLiveTranscription();
+			this.statusEl?.setText("🔴 Listening…");
+		} catch (e) {
+			const msg = e instanceof Error ? e.message : String(e);
+			this.teardownLiveTranscription();
+			this.statusEl?.setText("Live transcription unavailable - finishing as a normal recording.");
+			await this.plugin.appendLog(`ERROR: live transcription failed to start - ${msg}`);
+		}
+	}
+
+	private async startLiveTranscription() {
+		const { WebSocket: WsCtor } = await loadWsModule();
+		const transcriber = new RealtimeTranscriber({
+			apiKey: this.plugin.settings.apiKeys.openai,
+			wsFactory: (url, headers) => new WsCtor(url, { headers }) as unknown as RealtimeSocket,
+			onPartial: (text) => {
+				this.partial = text;
+				this.renderTranscript();
+			},
+			onSegmentDone: (text) => {
+				if (text.trim()) this.segments.push(text.trim());
+				this.partial = "";
+				this.renderTranscript();
+			},
+			onError: (message) => {
+				// Also fires from our own close()/connection teardown on
+				// stop - handled is already true by then, so this is only
+				// a real mid-recording drop when it's still false.
+				if (this.handled) return;
+				this.liveDropped = true;
+				this.teardownLiveTranscription();
+				this.statusEl?.setText("Live transcription dropped - still recording, will transcribe after stop.");
+				void this.plugin.appendLog(`ERROR: live transcription connection dropped - ${message}`);
+			},
+		});
+		transcriber.connect();
+		this.transcriber = transcriber;
+
+		// {sampleRate: 24000} is only a hint - some platforms clamp to the
+		// hardware rate, which is why sendAudioChunk() downsamples using
+		// the AudioContext's actual sampleRate rather than assuming 24kHz.
+		const ctx = new AudioContext({ sampleRate: 24000 });
+		this.audioCtx = ctx;
+		const source = ctx.createMediaStreamSource(this.stream as MediaStream);
+
+		// A tiny inline AudioWorkletProcessor, registered via a Blob URL -
+		// no new asset needs to ship with the plugin for this. It just
+		// forwards each render quantum's Float32 samples to the main thread.
+		const workletUrl = URL.createObjectURL(
+			new Blob(
+				[
+					`class NousPcmWorklet extends AudioWorkletProcessor {
+						process(inputs) {
+							const channel = inputs[0]?.[0];
+							if (channel) this.port.postMessage(channel.slice());
+							return true;
+						}
+					}
+					registerProcessor("nous-pcm-worklet", NousPcmWorklet);`,
+				],
+				{ type: "application/javascript" }
+			)
+		);
+		try {
+			await ctx.audioWorklet.addModule(workletUrl);
+		} finally {
+			URL.revokeObjectURL(workletUrl);
+		}
+		const worklet = new AudioWorkletNode(ctx, "nous-pcm-worklet");
+		worklet.port.onmessage = (event: MessageEvent) => {
+			this.transcriber?.sendAudioChunk(event.data as Float32Array, ctx.sampleRate);
+		};
+		// Deliberately not connected to ctx.destination - that would echo
+		// the user's own mic back out through their speakers.
+		source.connect(worklet);
+		this.workletNode = worklet;
+	}
+
+	// Tears down only the live-transcription side (WS/worklet/context) -
+	// the MediaRecorder keeps running untouched, per the fallback matrix.
+	private teardownLiveTranscription() {
+		this.transcriber?.close();
+		this.transcriber = null;
+		this.workletNode?.disconnect();
+		this.workletNode = null;
+		void this.audioCtx?.close();
+		this.audioCtx = null;
+	}
+
+	async stopAndClose() {
+		if (this.handled) return;
+		this.handled = true;
+		this.teardownLiveTranscription();
+
+		const recorder = this.recorder;
+		if (recorder && recorder.state !== "inactive") {
+			recorder.onstop = () => {
+				this.stream?.getTracks().forEach((t) => t.stop());
+				this.plugin.setVoiceRecordingIndicator(false);
+				// A mid-recording drop means segments/partial only cover audio
+				// up to the drop point - using them would silently truncate the
+				// note. Pass no transcript so the batch pipeline re-transcribes
+				// the complete recording instead, matching the "nothing is
+				// lost" fallback promise.
+				const transcript = this.liveDropped
+					? undefined
+					: [...this.segments, this.partial].filter(Boolean).join(" ").trim() || undefined;
+				void this.plugin.saveVoiceRecording(recorder.mimeType || "audio/webm", this.chunks, transcript);
+			};
+			recorder.stop();
+		} else {
+			// getUserMedia/recorder never got going (e.g. denied) - nothing
+			// to save, the earlier Notice already explained why.
+			this.plugin.setVoiceRecordingIndicator(false);
+		}
+		this.close();
+	}
+
+	// Explicit, visible discard - distinct from an accidental close, which
+	// is treated as Stop (see onClose below), not a silent loss.
+	async cancel() {
+		if (this.handled) return;
+		this.handled = true;
+		this.teardownLiveTranscription();
+		this.recorder?.stop();
+		this.stream?.getTracks().forEach((t) => t.stop());
+		this.plugin.setVoiceRecordingIndicator(false);
+		new Notice("Nous: recording discarded.");
+		this.close();
+	}
+
+	// Esc / click-outside mid-recording: this codebase never silently
+	// drops a capture (see the duplicate-parking behavior in the README),
+	// so treat it the same as clicking Stop rather than losing the
+	// recording. stopAndClose()/cancel() both set `handled` before calling
+	// close() themselves, so this no-ops on those paths.
+	onClose() {
+		this.plugin.liveCaptureModal = null;
+		if (!this.handled) void this.stopAndClose();
+		this.contentEl.empty();
 	}
 }
 
